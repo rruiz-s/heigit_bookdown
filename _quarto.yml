@@ -1,0 +1,33 @@
+project:
+  type: book
+
+book:
+  title: "Connectivity for Disaster Resiliance"
+  subtitle: "Connectivity to increase resilience on the access to healthcare services impacted by flooding in Rio Grande do Sul."
+  author: "Ricardo Ruiz Sánchez"
+  repo-url: https://github.com/ddotta/cookbook-rpolars/
+  page-navigation: true
+  description: On the ... happened that
+  favicon: final_logo.png
+  sidebar:
+    logo: final_logo.png
+    search: true
+  date: "09/'09/2024"
+  
+  chapters:
+    - index.qmd
+    - intro.qmd
+    - summary.qmd
+    - references.qmd
+
+bibliography: references.bib
+
+format:
+  html:
+    theme: 
+      light: journal
+      dark: solar
+  pdf:
+    documentclass: scrreprt
+  epub:
+    cover-image: cover.png
