@@ -1,0 +1,14 @@
+{
+  "hash": "f8da1f91cbe47789f0c052c6fd1d2659",
+  "result": {
+    "markdown": "::: {.cell}\n\n:::\n\n\n# Conclussion\n## Framework\n## Data\n\n\n::: {.cell}\n\n:::\n\n\n## Sampling points\n## Network",
+    "supporting": [],
+    "filters": [
+      "rmarkdown/pagebreak.lua"
+    ],
+    "includes": {},
+    "engineDependencies": {},
+    "preserve": {},
+    "postProcess": true
+  }
+}

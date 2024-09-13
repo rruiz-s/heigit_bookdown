@@ -1,5 +1,13 @@
 # Introduction
 
+# MAP
+
+AÑadir 
+An innovative approach to assess the impact of urban flooding: Modeling
+transportation system failure due to urban flooding
+
+TABLA
+
 This is a book created from markdown and executable code.
 
 See @knuth84 for additional discussion of literate programming.
@@ -7,3 +15,15 @@ See @knuth84 for additional discussion of literate programming.
 ```{r}
 1 + 1
 ```
+
+
+![](/media/framework_heigit.png)
+
+The **research objective** is to improve urban resilience by identifying critical infrastructures necessary for accessing healthcare facilities, comparing road connectivity and accessibility. The following research questions are addressed in this study:
+
+## Research questions
+
+1. How did the road connectivity of the city network change after being impacted by the floodings in Rio Grande do Sul based on Edge Betweenness Centrality?
+2. Which healthcare facilities were most affected by the floodings based on
+accessibility metrics?
+3. In which area of a city’s network should decisions be made to reinforce or redesign routes to optimize healthcare accessibility and ensure minimal disruption during flood events?

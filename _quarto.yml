@@ -1,6 +1,9 @@
 project:
   type: book
 
+execute:
+  freeze: auto
+  
 book:
   title: "Connectivity for Disaster Resiliance"
   subtitle: "Connectivity to increase resilience on the access to healthcare services impacted by flooding in Rio Grande do Sul."
@@ -17,13 +20,17 @@ book:
   chapters:
     - index.qmd
     - intro.qmd
-    - summary.qmd
-    - references.qmd
+    - methodology.qmd
+    - results.qmd
+    - conclussion.qmd
+    - future_work.qmd
 
 bibliography: references.bib
 
 format:
   html:
+    code-fold: true
+    code-summary: "Show the code"
     theme: 
       light: journal
       dark: solar

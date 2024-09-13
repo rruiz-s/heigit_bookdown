@@ -1,0 +1,18 @@
+
+# Future work & suggestions
+## Point of interest
+
+## Perforamance
+
+### Flood mask
+
+Using the dilate and erode method described in the slide 95/187 ([link](https://cdn2.hubspot.net/hubfs/2283855/PostGIS%20Day%202019%20-%20Overview.pdf)) could remove small islands that increase the computational costs. A use case of this technique is observed when simplifying coastlines ([link](https://github.com/rruiz-s/heigit-gima/wiki/2.-Data-preparation#post-scenario))
+
+## Data
+
+```{r}
+
+```
+
+## Sampling points
+## Network
