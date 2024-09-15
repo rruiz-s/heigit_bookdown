@@ -61,22 +61,154 @@ VACUUM(full, ANALYZE) sampling_weight_200_destination;
 VACUUM(full, ANALYZE) porto_alegre_net_largest;
 --- Run query
 
-EXPLAIN ANALYZE 
-CREATE TABLE centrality_200_200_porto AS
-SELECT 
-	*
-FROM
-	pgr_dijkstra('SELECT
-					  	ogc_fid AS id,
-				 		fromid AS source,
-						toid AS target,
-					 	weight AS cost
-				 FROM porto_alegre_net_largest',
-						ARRAY(SELECT id FROM sampling_weight_200_origin),
-						ARRAY(SELECT id FROM sampling_weight_200_destination),
-						directed := TRUE)  j
-						left JOIN porto_alegre_net_largest AS b
-				  ON j.edge = b.ogc_fid;
+EXPLAIN ANALYZE
+ CREATE TABLE centrality_200_200_porto AS
+ SELECT   b.ogc_fid,
+ b.the_geom,
+ count(the_geom) as centrality 
+ FROM  pgr_dijkstra('SELECT  ogc_fid AS id,
+							  fromid AS source,
+							toid AS target,
+							weight AS cost
+				      FROM porto_alegre_net_largest',
+				      ARRAY(SELECT net_id AS start_id FROM porto_200_origin  ),
+				      ARRAY(SELECT net_id AS end_id FROM porto_200_destination ),
+				      directed := TRUE) j
+				      left JOIN porto_alegre_net_largest AS b
+				      ON j.edge = b.ogc_fid
+				      GROUP BY  b.ogc_fid, b.the_geom
+				      ORDER BY centrality DESC;  
+```
 
+## 300 
+
+```{sql}
+#| eval:  false
+
+
+---- 300
+
+---- Create 300 origin
+CREATE TABLE sampling_weight_300_origin  AS
+with porto_300_origin AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_origin 
+        ORDER BY random() LIMIT 300)
+        SELECT * FROM  porto_300_origin;  
+---- Create 300 destination
+CREATE TABLE sampling_weight_300_destination  AS
+with porto_300_destination AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_origin 
+        ORDER BY random() LIMIT 300)
+        SELECT * FROM  porto_300_destination;  
+---- Create index for origin
+CREATE INDEX idx_sampling_weight_300_origin_net_id ON sampling_weight_300_origin USING hash(net_id);
+CREATE INDEX idx_sampling_weight_300_origin_geom ON sampling_weight_300_origin USING gist(the_geom);
+---- Create index for destination
+CREATE INDEX idx_sampling_weight_300_destination_net_id ON sampling_weight_300_destination USING hash(net_id);
+CREATE INDEX idx_sampling_weight_300_destination_geom ON sampling_weight_300_destination USING gist(the_geom);
+---- Cluster
+CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
+---- Vacuum clean
+VACUUM(full, ANALYZE) sampling_weight_300_origin;
+VACUUM(full, ANALYZE) sampling_weight_300_destination;
+VACUUM(full, ANALYZE) porto_alegre_net_largest;
+--- Run query
+
+ EXPLAIN ANALYZE
+ CREATE TABLE centrality_300_300_porto AS
+ SELECT   b.ogc_fid,
+ b.the_geom,
+ count(the_geom) as centrality 
+ FROM  pgr_dijkstra('SELECT  ogc_fid AS id,
+							  fromid AS source,
+							toid AS target,
+							weight AS cost
+				      FROM porto_alegre_net_largest',
+				      ARRAY(SELECT net_id AS start_id FROM sampling_weight_300_origin  ),
+				      ARRAY(SELECT net_id AS end_id FROM sampling_weight_300_destination ),
+				      directed := TRUE) j
+				      left JOIN porto_alegre_net_largest AS b
+				      ON j.edge = b.ogc_fid
+				      GROUP BY  b.ogc_fid, b.the_geom
+				      ORDER BY centrality DESC;  
+				      
+--- check max centrality				     
+SELECT max(centrality) FROM centrality_300_300_porto ;
+--- check max rows
+SELECT  count(*) FROM centrality_10_10_porto;
+```
+
+
+## Method array_agg()
+
+```{sql}
+#| eval: false
+
+
+---- create origin_destination
+CREATE TEMP TABLE vertices_lookup_10
+AS             
+WITH all_pairs AS (
+  SELECT f.net_id AS fid, f.the_geom AS fgeom,
+         t.net_id AS tid, t.the_geom AS tgeom
+    FROM random_10_origin AS f,
+         random_10_destination AS t
+),
+vertices AS (
+  SELECT fid, tid,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> fgeom
+       LIMIT 1) AS fv,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> tgeom
+       LIMIT 1) AS tv
+  FROM all_pairs
+)
+SELECT * FROM vertices;
+---- Number of OD
+SELECT count(*) FROM vertices_lookup_10;
+---- Create index
+CREATE INDEX idx_vertices_lookup_10_fid ON vertices_lookup_10 USING hash(fid);
+CREATE INDEX idx_vertices_lookup_10_tid ON vertices_lookup_10 USING hash(tid);
+CREATE INDEX idx_vertices_lookup_10_fv ON vertices_lookup_10 USING hash(fv);
+CREATE INDEX idx_vertices_lookup_10_tv ON vertices_lookup_10 USING hash(tv);
+---- Vacuum and clean
+VACUUM(full, ANALYZE) vertices_lookup_10;
+VACUUM(full, ANALYZE) porto_alegre_net_largest;
+---- Run query using array_agg()
+EXPLAIN ANALYZE
+CREATE TABLE porto_100_dijkstra_agg AS
+WITH pgr_result AS (
+  SELECT pgr_dijkstra('SELECT ogc_fid AS id,
+	         fromid AS source,
+			toid AS target,
+			 weight AS cost FROM porto_alegre_net_largest',
+    array_agg(fv), array_agg(tv), 
+    directed := true
+  ) FROM vertices_lookup_10 
+) 
+SELECT 
+ b.ogc_fid,
+ b.the_geom,
+ count(the_geom) as centrality 
+FROM pgr_result
+LEFT JOIN porto_alegre_net_largest AS b
+ON (pgr_dijkstra).edge = b.ogc_fid
+GROUP BY 
+	the_geom, b.ogc_fid
+ORDER BY 
+	centrality DESC;
+---- Max centrality value
+select max(centrality) FROM porto_100_dijkstra_agg ;
+---- Number of rows
+select count(*) FROM porto_100_dijkstra_agg ;
 ```
 
