@@ -24,6 +24,7 @@ book:
     - results.qmd
     - conclussion.qmd
     - future_work.qmd
+    - appendix.qmd
 
 bibliography: references.bib
 

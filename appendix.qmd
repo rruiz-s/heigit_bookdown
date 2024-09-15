@@ -1,0 +1,82 @@
+# Performance tests
+
+## 10
+```{sql}
+#| eval: false
+
+
+```
+
+
+## 50
+```{sql}
+#| eval: false
+
+
+```
+
+
+## 100
+
+```{sql}
+#| eval: false
+
+
+```
+
+
+## 200
+
+```{sql}
+#| eval: false
+---- Create 200 origin
+CREATE TABLE sampling_weight_200_origin  AS
+with porto_200_origin AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_origin 
+        ORDER BY random() LIMIT 200)
+        SELECT * FROM  porto_200_origin;  
+---- Create 200 destination
+CREATE TABLE sampling_weight_200_destination  AS
+with porto_200_destination AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_origin 
+        ORDER BY random() LIMIT 200)
+        SELECT * FROM  porto_200_destination;  
+---- Create index for origin
+CREATE INDEX idx_sampling_weight_200_origin_net_id ON sampling_weight_200_origin USING hash(net_id);
+CREATE INDEX idx_sampling_weight_200_origin_geom ON sampling_weight_200_origin USING gist(the_geom);
+---- Create index for destination
+CREATE INDEX idx_sampling_weight_200_destination_net_id ON sampling_weight_200_destination USING hash(net_id);
+CREATE INDEX idx_sampling_weight_200_destination_geom ON sampling_weight_200_destination USING gist(the_geom);
+---- Cluster
+CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
+---- Vacuum clean
+VACUUM(full, ANALYZE) sampling_weight_200_origin;
+VACUUM(full, ANALYZE) sampling_weight_200_destination;
+VACUUM(full, ANALYZE) porto_alegre_net_largest;
+--- Run query
+
+EXPLAIN ANALYZE 
+CREATE TABLE centrality_200_200_porto AS
+SELECT 
+	*
+FROM
+	pgr_dijkstra('SELECT
+					  	ogc_fid AS id,
+				 		fromid AS source,
+						toid AS target,
+					 	weight AS cost
+				 FROM porto_alegre_net_largest',
+						ARRAY(SELECT id FROM sampling_weight_200_origin),
+						ARRAY(SELECT id FROM sampling_weight_200_destination),
+						directed := TRUE)  j
+						left JOIN porto_alegre_net_largest AS b
+				  ON j.edge = b.ogc_fid;
+
+```
+

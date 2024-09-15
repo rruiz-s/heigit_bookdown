@@ -6,7 +6,7 @@
 #| warning: false
 
 # Load packages
-lapply(c("tidyverse","DT","leaflet","sf","DBI", "RPostgres"),
+lapply(c("tidyverse","DT","leaflet","sf","DBI","leafem", "RPostgres","mapview","leafpop","lattice","leafsync"),
        require,
        character.only =T)
 
@@ -36,19 +36,45 @@ osmium extract -b -51.2791,-30.1722,-50.9407,-29.8048 sul-240501.osm.pbf -o puer
 ## OSM & ORS
 
 ```{r}
-#| eval: false
-
+#| message: false
+#| warning: false
 
 # Load data
-osm_network <- st_read(eisenberg_connection, layer="")
 ors_network <- st_read(eisenberg_connection, layer="porto_alegre_net_pre")
-
+osm_network <- st_read(eisenberg_connection, layer="puerto_alegre_ghs_osm")
 ors_network_subset <- ors_network |> head()
+## Create subset using a bounding box
+ors_subset <- ors_network |> filter(id ==140210) |> st_bbox()
+xrange <- ors_subset$xmax - ors_subset$xmin
+yrange <- ors_subset$ymax - ors_subset$ymin
+## Expand the bounding box
+ors_subset[1] <- ors_subset[1] - (4 * xrange) # xmin - left
+ors_subset[3] <- ors_subset[3] + (4 * xrange) # xmax - right
+ors_subset[2] <- ors_subset[2] - (2 * yrange) # ymin - bottom
+ors_subset[4] <- ors_subset[4] + (2 * yrange) # ymax - top
+## Convert bounding box into polygon
+ors_subset_bbox <- ors_subset %>%  # 
+  st_as_sfc() 
+## Use the polygon to subset the network
+intersection_ors <- sf::st_intersection(ors_network, ors_subset_bbox)
+intersection_osm <- sf::st_intersection(osm_network, ors_subset_bbox)
+## Mapview maps
+m1 <- mapview(intersection_osm, 
+              color="#6e93ff",
+              layer.name ="OpenStreetMap - Geometry",
+              popup=popupTable(intersection_osm, 
+                               zcol=c("id","osm_id","name","geom")))
+m2 <- mapview(intersection_ors,
+              color ="#d50038",
+              layer.name="OpenRouteService -Graph",
+              popup=popupTable(intersection_ors))
+
+sync(m1,m2) 
   
-#leaflet() |>
-#  addProviderTiles("Esri.WorldImagery", group="Esri.WorldImagery") |>
-#  addPolylines(data= ors_network_subset$the_geom, color)
+
 ```
+
+
 
 ## Sampling points
 ## Network
@@ -56,11 +82,42 @@ ors_network_subset <- ors_network |> head()
 ### Closeness
 
 ```{r}
-
-# Import he data
-## hospital with closenesss values
 closseness <-sf::st_read(eisenberg_connection, 
                             layer = "clossness_hospital_porto")
+closseness_no_geom <- closseness |>  
+                          arrange(ds_cnes, closeness) |>
+                          mutate(lng= 
+                              unlist(map(geom_hospital,1)),
+                           lat=
+                              unlist(map(geom_hospital,2)),
+                           closeness_norm = 
+                          (closseness$closeness - min(closseness$closeness)) / (max(closseness$closeness) - min(closseness$closeness)) * 100,
+                          position = rank(-closeness),
+                          ds_cnes =stringr::str_to_title(ds_cnes)) |>
+                  sf::st_drop_geometry()
+
+DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes","closeness")),
+              extensions="Buttons",
+                         options=list(
+                           dom="Bfrtip",
+                           buttons=c("copy","csv","pdf"),
+                            initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+    "}")
+                                  )
+              ) |> 
+    DT::formatStyle("closeness",
+              background=DT::styleColorBar(range(closseness_no_geom$closeness),'#ee8b8b'),
+                backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') 
+
+```
+
+```{r}
+
+## hospital with closenesss values
 closseness_df <- closseness |>  arrange(ds_cnes, closeness) |>
                     mutate(lng= 
                               unlist(map(geom_hospital,1)),
@@ -90,7 +147,5 @@ leaflet(closseness_df) |>
                                    "<b> Closeness</b>:", closeness, "<br/>",
                                    "<b>Longitude: </b>", lng, "<br/>",
                                    "<b>Posição </b>", position, "<br/>"))
-
-
 
 ```
