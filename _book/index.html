@@ -23,7 +23,26 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-</style>
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
 
 
 <script src="site_libs/quarto-nav/quarto-nav.js"></script>
@@ -206,10 +225,71 @@ ul.task-list li input[type="checkbox"] {
 
 <section id="preface" class="level1 unnumbered">
 <h1 class="unnumbered">Preface</h1>
-<p>This is a Quarto book.</p>
-<p>To learn more about Quarto books visit <a href="https://quarto.org/docs/books" class="uri">https://quarto.org/docs/books</a>.</p>
+<p>From natural disasters to human alterations in urban infrastructure, network connectivity is key for the population’s survival and for the metapopulation dynamics <span class="citation" data-cites="alberti_advances_2008">(<a href="#ref-alberti_advances_2008" role="doc-biblioref">Alberti 2008</a>)</span>. Through networks, people, resources, goods, information or services flows <span class="citation" data-cites="heywood_introduction_2011">(<a href="#ref-heywood_introduction_2011" role="doc-biblioref">Heywood, Cornelius, and Carver 2011</a>)</span>, and its spread is highly dependent on those segments with higher betweenness edge centrality <span class="citation" data-cites="kolaczyk_statistical_2014">(<a href="#ref-kolaczyk_statistical_2014" role="doc-biblioref">Kolaczyk and Csárdi 2014</a>)</span>. Therefore, measuring the betweenness edge centrality on the different segments of the network help us to identify critical infrastructures that play a key role in the connectivity ensuring the movement along the network.</p>
+<p>An interruption of the flow on these critical infrastructures can induce cascading effects causing physical, social or economic disruption <span class="citation" data-cites="petricola_assessing_2022-1">(<a href="#ref-petricola_assessing_2022-1" role="doc-biblioref">Petricola et al. 2022</a>)</span>. Discrete events such as disasters can trigger these cascading events disrupting the landscape. These disruptions that test the system’s capacity to recover from the change, namely, its resilience <span class="citation" data-cites="levin_iii17_2009-1">(<a href="#ref-levin_iii17_2009-1" role="doc-biblioref">Scheffer 2009</a>)</span>, can derive from climate change. Extreme events related to climate change such as storms or floods are being increased as well as the severity and frequency of most hazards <span class="citation" data-cites="kuffer_eo-based_2021">(<a href="#ref-kuffer_eo-based_2021" role="doc-biblioref">Kuffer et al. 2021</a>)</span>. To minimize the humanitarian consequences of these severe events, the ability of disaster preparedness by finding criticality of infrastructure is key <span class="citation" data-cites="petricola_assessing_2022-1">(<a href="#ref-petricola_assessing_2022-1" role="doc-biblioref">Petricola et al. 2022</a>)</span>.</p>
+<p>As ecosystem services become more stressed in the future <span class="citation" data-cites="costanza_value_1997">(<a href="#ref-costanza_value_1997" role="doc-biblioref">Costanza et al. 1997</a>)</span>, and the frequency and intensity of extreme natural hazards increases (“Summary for Policymakers,” 2023), increasing resilience is of critical importance for numerous frameworks. On a global scale, the Sendai Framework for Disaster Risk Reduction 1 aims to reduce disaster damage to critical infrastructure and disruption of basic services as part of the fourth global target. Likewise, (a) damage to critical infrastructure and (b) number of disruptions to basic services, attributed to disasters are part of the indicators 11.5.3 from the Sustainable Development Goal 11, “making cities and human settlements inclusive, safe, resilient and sustainable2“. Therefore, both frameworks aim to increase urban resilience <span class="citation" data-cites="etinay_building_2018">(<a href="#ref-etinay_building_2018" role="doc-biblioref">Etinay, Egbu, and Murray 2018</a>)</span>.</p>
+<p>Resilience is a term with different interpretations depending on the discipline <span class="citation" data-cites="therias_city_2023-1">(<a href="#ref-therias_city_2023-1" role="doc-biblioref">Therias and Rafiee 2023</a>)</span>. For example, in ecology, resilience is defined as “the capacity of a system to recover to essentially the same state after a disturbance” <span class="citation" data-cites="levin_iii17_2009-1">(<a href="#ref-levin_iii17_2009-1" role="doc-biblioref">Scheffer 2009</a>)</span>. In the context of this research, urban resilience is defined as “a property of the urban system that enables it to survive and thrive in the face of uncertainty, adversity, and change” <span class="citation" data-cites="abenayake_innovative_2022">(<a href="#ref-abenayake_innovative_2022" role="doc-biblioref">Abenayake et al. 2022a</a>)</span>. Finding critical infrastructures can increase urban resilience by localizing where to build alternative routes to healthcare facilities (i.e., increasing redundancy) or finding structures, such as bridges, that have an important function in the network due to its connectivity (i.e., increasing robustness). Redundancy and robustness are two properties of the popular 4R model of resilience, which also includes resourcefulness and rapidity <span class="citation" data-cites="xu_development_2024">(<a href="#ref-xu_development_2024" role="doc-biblioref">Xu et al. 2024</a>)</span>.</p>
+<p>On a regional level, territorial resilience is one of the main themes in the EU R&amp;I policy agenda for Nature-based Solutions. Resilience to natural disasters and adaptation to climate change are part of the future priorities defined in the Granada Declaration. On a national level, low-income countries with fewer resources to prepare, mitigate, and recover from climate change-related disasters, especially the population living in deprived areas, could benefit from this route service adapted to disaster management.</p>
+<p>Centrality analyses are constrained by its high computational costs, challenging their validity to represent real-world scenarios. To reduce these costs, studies did not use entire city- regions as area of interest <span class="citation" data-cites="abenayake_innovative_2022-1">(<a href="#ref-abenayake_innovative_2022-1" role="doc-biblioref">Abenayake et al. 2022b</a>)</span> Similarly, other studies on accessibility used different techniques to maximize computation efficiency <span class="citation" data-cites="spangler_calculating_2023-1">(<a href="#ref-spangler_calculating_2023-1" role="doc-biblioref">Spangler et al. 2023</a>)</span>. Likewise, only a selection of the nodes was used to save computation time <span class="citation" data-cites="florath_road_2024">(<a href="#ref-florath_road_2024" role="doc-biblioref">Florath, Chanussot, and Keller 2024</a>)</span>. Large spatial scales refined this strategy using network percolation, which allowed the study of flood disturbances on vast regions such as the entire road networks of China and the USA, among others <span class="citation" data-cites="van_ginkel_will_2022">(<a href="#ref-van_ginkel_will_2022" role="doc-biblioref">Van Ginkel et al. 2022</a>)</span>. Currently, there are methods and technologies that aim to optimize queries reducing its computational costs.</p>
+<p>Spatial indexing systems are used to query large geospatial data sets, increasing their efficient queries. For example, Uber’s Hexagonal Hierarchical Spatial Index (H3) was applied to optimize emergency response routes <span class="citation" data-cites="diallo_using_2023-1">(<a href="#ref-diallo_using_2023-1" role="doc-biblioref">Diallo et al. 2023</a>)</span>. These spatial indexes can be implemented into PostgreSQL using pgRouting, which has been previously used to find the shortest path to healthcare facilities <span class="citation" data-cites="alasadi_network_nodate">(<a href="#ref-alasadi_network_nodate" role="doc-biblioref">Alasadi et al., n.d.</a>)</span>. Instead of PostgreSQL, other new database management system, such as DuckDB, was used to implement memory optimization <span class="citation" data-cites="kuiper_robust_nodate">(<a href="#ref-kuiper_robust_nodate" role="doc-biblioref">Kuiper, Boncz, and Muhleisen, n.d.</a>)</span>. Therefore, the current contribution of this research would be applying these optimization processes running pgRouting to obtain different centrality and accessibility metrics.</p>
 
 
+<div id="refs" class="references csl-bib-body hanging-indent" role="list">
+<div id="ref-abenayake_innovative_2022" class="csl-entry" role="listitem">
+Abenayake, Chethika, Amila Jayasinghe, Hasintha Nawod Kalpana, Eshi Eranga Wijegunarathna, and P. K. S. Mahanama. 2022a. <span>“An Innovative Approach to Assess the Impact of Urban Flooding: Modeling Transportation System Failure Due to Urban Flooding.”</span> <em>Applied Geography</em> 147 (October): 102772. <a href="https://doi.org/10.1016/j.apgeog.2022.102772">https://doi.org/10.1016/j.apgeog.2022.102772</a>.
+</div>
+<div id="ref-abenayake_innovative_2022-1" class="csl-entry" role="listitem">
+———. 2022b. <span>“An Innovative Approach to Assess the Impact of Urban Flooding: Modeling Transportation System Failure Due to Urban Flooding.”</span> <em>Applied Geography</em> 147 (October): 102772. <a href="https://doi.org/10.1016/j.apgeog.2022.102772">https://doi.org/10.1016/j.apgeog.2022.102772</a>.
+</div>
+<div id="ref-alasadi_network_nodate" class="csl-entry" role="listitem">
+Alasadi, Hamid Ali Abed, Mohammed Talib Aziz, Mohammed Dhiya, and Ahmed Abdulmajed. n.d. <span>“A Network Analysis for Finding the Shortest Path in Hospital Information System with <span>GIS</span> and <span>GPS</span>.”</span>
+</div>
+<div id="ref-alberti_advances_2008" class="csl-entry" role="listitem">
+Alberti, Marina. 2008. <em>Advances in Urban Ecology</em>. Boston, <span>MA</span>: Springer <span>US</span>. <a href="https://doi.org/10.1007/978-0-387-75510-6">https://doi.org/10.1007/978-0-387-75510-6</a>.
+</div>
+<div id="ref-costanza_value_1997" class="csl-entry" role="listitem">
+Costanza, Robert, Ralph d’Arge, Rudolf De Groot, Stephen Farber, Monica Grasso, Bruce Hannon, Karin Limburg, et al. 1997. <span>“The Value of the World’s Ecosystem Services and Natural Capital.”</span> <em>Nature</em> 387 (6630): 253–60. <a href="https://doi.org/10.1038/387253a0">https://doi.org/10.1038/387253a0</a>.
+</div>
+<div id="ref-diallo_using_2023-1" class="csl-entry" role="listitem">
+Diallo, Francis Patrick, Mihai Alexandru Preda, Alexandru-Ionuţ Mustaţă, and Bogdan-Costel Mocanu. 2023. <span>“Using Spatial Indexing Systems to Optimize Emergency Response Routes.”</span> In <em>2023 24th International Conference on Control Systems and Computer Science (<span>CSCS</span>)</em>, 544–50. Bucharest, Romania: <span>IEEE</span>. <a href="https://doi.org/10.1109/CSCS59211.2023.00092">https://doi.org/10.1109/CSCS59211.2023.00092</a>.
+</div>
+<div id="ref-etinay_building_2018" class="csl-entry" role="listitem">
+Etinay, Nuha, Charles Egbu, and Virginia Murray. 2018. <span>“Building Urban Resilience for Disaster Risk Management and Disaster Risk Reduction.”</span> <em>Procedia Engineering</em> 212: 575–82. <a href="https://doi.org/10.1016/j.proeng.2018.01.074">https://doi.org/10.1016/j.proeng.2018.01.074</a>.
+</div>
+<div id="ref-florath_road_2024" class="csl-entry" role="listitem">
+Florath, Janine, Jocelyn Chanussot, and Sina Keller. 2024. <span>“Road Accessibility During Natural Hazards Based on Volunteered Geographic Information Data and Network Analysis.”</span> <em><span>ISPRS</span> International Journal of Geo-Information</em> 13 (4): 107. <a href="https://doi.org/10.3390/ijgi13040107">https://doi.org/10.3390/ijgi13040107</a>.
+</div>
+<div id="ref-heywood_introduction_2011" class="csl-entry" role="listitem">
+Heywood, D. Ian, Sarah Cornelius, and Steve Carver. 2011. <em>An Introduction to Geographical Information Systems</em>. 4th ed. Harlow, England ; Toronto: Prentice Hall.
+</div>
+<div id="ref-kolaczyk_statistical_2014" class="csl-entry" role="listitem">
+Kolaczyk, Eric D., and Gábor Csárdi. 2014. <em>Statistical Analysis of Network Data with r</em>. Vol. 65. Use r! New York, <span>NY</span>: Springer New York. <a href="https://doi.org/10.1007/978-1-4939-0983-4">https://doi.org/10.1007/978-1-4939-0983-4</a>.
+</div>
+<div id="ref-kuffer_eo-based_2021" class="csl-entry" role="listitem">
+Kuffer, Monika, Dana R. Thomson, Andrew Maki, Sabine Vanhuysse, Stefanos Georganos, Richard Sliuzas, and Claudio Persello. 2021. <span>“<span>EO</span>-Based Low-Cost Frameworks to Address Global Urban Data <span>GAPS</span> on Deprivation and Multiple Hazards.”</span> In <em>2021 <span>IEEE</span> International Geoscience and Remote Sensing Symposium <span>IGARSS</span></em>, 2106–9. Brussels, Belgium: <span>IEEE</span>. <a href="https://doi.org/10.1109/IGARSS47720.2021.9554094">https://doi.org/10.1109/IGARSS47720.2021.9554094</a>.
+</div>
+<div id="ref-kuiper_robust_nodate" class="csl-entry" role="listitem">
+Kuiper, Laurens, Peter Boncz, and Hannes Muhleisen. n.d. <span>“Robust External Hash Aggregation in the Solid State Age.”</span>
+</div>
+<div id="ref-petricola_assessing_2022-1" class="csl-entry" role="listitem">
+Petricola, Sami, Marcel Reinmuth, Sven Lautenbach, Charles Hatfield, and Alexander Zipf. 2022. <span>“Assessing Road Criticality and Loss of Healthcare Accessibility During Floods: The Case of Cyclone Idai, Mozambique 2019.”</span> <em>International Journal of Health Geographics</em> 21 (1): 14. <a href="https://doi.org/10.1186/s12942-022-00315-2">https://doi.org/10.1186/s12942-022-00315-2</a>.
+</div>
+<div id="ref-levin_iii17_2009-1" class="csl-entry" role="listitem">
+Scheffer, Marten. 2009. <span>“<span>III</span>.17 Alternative Stable States and Regime Shifts in Ecosystems.”</span> In <em>The Princeton Guide to Ecology</em>, edited by Simon A. Levin, Stephen R. Carpenter, H. Charles J. Godfray, Ann P. Kinzig, Michel Loreau, Jonathan B. Losos, Brian Walker, and David S. Wilcove, 395–406. Princeton University Press. <a href="https://doi.org/10.1515/9781400833023.395">https://doi.org/10.1515/9781400833023.395</a>.
+</div>
+<div id="ref-spangler_calculating_2023-1" class="csl-entry" role="listitem">
+Spangler, Keith R., Paige Brochu, Amruta Nori-Sarma, Dennis Milechin, Michael Rickles, Brandeus Davis, Kimberly A. Dukes, and Kevin J. Lane. 2023. <span>“Calculating Access to Parks and Other Polygonal Resources: A Description of Open-Source Methodologies.”</span> <em>Spatial and Spatio-Temporal Epidemiology</em> 47 (November): 100606. <a href="https://doi.org/10.1016/j.sste.2023.100606">https://doi.org/10.1016/j.sste.2023.100606</a>.
+</div>
+<div id="ref-therias_city_2023-1" class="csl-entry" role="listitem">
+Therias, Adele, and Azarakhsh Rafiee. 2023. <span>“City Digital Twins for Urban Resilience.”</span> <em>International Journal of Digital Earth</em> 16 (2): 4164–90. <a href="https://doi.org/10.1080/17538947.2023.2264827">https://doi.org/10.1080/17538947.2023.2264827</a>.
+</div>
+<div id="ref-van_ginkel_will_2022" class="csl-entry" role="listitem">
+Van Ginkel, Kees C. H., Elco E. Koks, Frederique De Groen, Viet Dung Nguyen, and Lorenzo Alfieri. 2022. <span>“Will River Floods <span>‘Tip’</span> European Road Networks? A Robustness Assessment.”</span> <em>Transportation Research Part D: Transport and Environment</em> 108 (July): 103332. <a href="https://doi.org/10.1016/j.trd.2022.103332">https://doi.org/10.1016/j.trd.2022.103332</a>.
+</div>
+<div id="ref-xu_development_2024" class="csl-entry" role="listitem">
+Xu, Shiying, Hao Chen, Adrian Wing-Keung Law, Feng Zhu, Daniel Martini, and Martin Lim. 2024. <span>“Development of a Standardised Framework with Universal Core Indicators for Flood Resilience Assessment.”</span> <em>Natural Hazards</em>, April. <a href="https://doi.org/10.1007/s11069-024-06631-z">https://doi.org/10.1007/s11069-024-06631-z</a>.
+</div>
+</div>
 </section>
 
 </main> <!-- /main -->

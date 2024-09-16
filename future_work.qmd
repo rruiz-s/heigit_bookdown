@@ -10,9 +10,5 @@ Using the dilate and erode method described in the slide 95/187 ([link](https://
 
 ## Data
 
-```{r}
-
-```
-
 ## Sampling points
 ## Network

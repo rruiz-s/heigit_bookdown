@@ -212,3 +212,63 @@ select max(centrality) FROM porto_100_dijkstra_agg ;
 select count(*) FROM porto_100_dijkstra_agg ;
 ```
 
+## pgr_astrar()
+
+```{sql}
+#| eval: false
+
+SELECT * FROM random_10_origin ro ;
+ 
+CREATE TABLE porto_alegre_net_largest_astar AS		    
+WITH porto_alegre_net_astart AS (
+SELECT 
+*,
+st_startpoint(the_geom) AS start_pt,
+st_endpoint(the_geom) AS end_pt
+FROM porto_alegre_net_largest AS net)
+SELECT *,
+	st_x(start_pt) AS x1,
+	st_y(start_pt) AS y1,
+	st_x(end_pt) AS x2,
+	st_y(end_pt) AS y2
+FROM porto_alegre_net_astart;
+---- adding spatial index
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_the_geom ON porto_alegre_net_largest_astar  USING gist(the_geom);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_start ON porto_alegre_net_largest_astar  USING gist(start_pt);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_end ON porto_alegre_net_largest_astar USING gist(end_pt);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_x1 ON porto_alegre_net_largest_astar  USING btree(x1);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_y1 ON porto_alegre_net_largest_astar USING btree(y1);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_x2 ON porto_alegre_net_largest_astar USING btree(x2);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_y2 ON porto_alegre_net_largest_astar USING btree(y2);                      
+----- RUnning the query
+EXPLAIN ANALYZE
+CREATE TABLE centrality_10_10_porto_astrar AS
+SELECT  
+	b.ogc_fid,
+	 b.the_geom,
+ 	count(the_geom) as centrality 
+FROM pgr_astar(
+	'SELECT ogc_fid AS id,
+			fromid AS source,
+			toid AS target,
+			weight AS cost,
+			x1,
+			y1,
+			x2,
+			y2
+	FROM porto_alegre_net_largest_astar',
+	ARRAY(SELECT net_id FROM  random_10_origin),
+	ARRAY(SELECT net_id FROM  random_10_destination),
+		     directed:=TRUE,
+		     heuristic:=2) j
+                      left JOIN porto_alegre_net_largest_astar AS b
+                      ON j.edge = b.ogc_fid
+                      GROUP BY  b.ogc_fid, b.the_geom
+                      ORDER BY centrality DESC;  
+
+--- check max centrality                     
+SELECT max(centrality) FROM centrality_10_10_porto_astrar ;
+--- check max rows
+SELECT  count(*) FROM centrality_10_10_porto_astrar;
+```
+

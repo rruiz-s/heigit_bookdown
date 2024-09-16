@@ -20,6 +20,7 @@ data_df <- read_csv('/home/ricardo/HeiGIT-Github/data_required_porto_alegre/requ
 data_df$Link <-  paste0('<a href="', data_df$Link ,'">', 'Link </a>')
 
 DT::datatable(data_df, class ='compact', rownames= FALSE, escape = FALSE, caption="Data description")
+
 ```
 ## Framework
 
@@ -28,7 +29,8 @@ DT::datatable(data_df, class ='compact', rownames= FALSE, escape = FALSE, captio
 ## Area of Interest
 ### Import
 
-The tool ogr2ogr imported the data and adjust the geometry according to the recommendations.  The recommendation was *"pgRouting processes single features more effficiently than multiegeometries, so whenver possible, choose single over multi"* mentioned in the book pgrouting.
+The tool ogr2ogr imported the data and adjust the geometry according to the recommendations. The recommendation was “pgRouting processes single features more effficiently than multiegeometries, so whenver possible, choose single over multi” mentioned in the book pgrouting.
+
 ```{r}
 #| eval: false
 
@@ -48,6 +50,7 @@ ogr2ogr -f PostgreSQL PG:"host=localhost port= 25432 user=docker password=docker
 ### From Rio Grande do Sul Geoportal
 ogr2ogr -f PostgreSQL PG:"host=localhost port= 25432 user=docker password=docker dbname=gis schemas=heigit" /home/ricardo/HeiGIT-Github/data_required_porto_alegre/Hospitais_com_Leitos_de_UTIs_no_RS.geojson -nln hospitals_bed_rs -lco GEOMETRY_NAME=geom
 ```
+
 
 #### Network: OpenStreetMap (OSM)
 
@@ -141,22 +144,23 @@ FROM
                               porto_alegre_net_pre')),
 porto_alegre_net_component_geom AS (
 SELECT 
-	net.*,
-	net_geom.the_geom
+    net.*,
+    net_geom.the_geom
 FROM 
-	porto_alegre_net_component AS net
+    porto_alegre_net_component AS net
 JOIN 
-	porto_alegre_net_pre  AS net_geom
+    porto_alegre_net_pre  AS net_geom
 ON 
-	net.node = net_geom.fromid)
+    net.node = net_geom.fromid)
 SELECT 
-	component,
-	st_union(the_geom) AS the_geom,
-	st_length(st_union(the_geom)::geography)::int AS length
+    component,
+    st_union(the_geom) AS the_geom,
+    st_length(st_union(the_geom)::geography)::int AS length
 FROM  
-	porto_alegre_net_component_geom
+    porto_alegre_net_component_geom
 GROUP BY component
 ORDER BY length DESC;
+
 ```
 
 The largest length selected the network component of the study. The following code created this table ruling out the rest of the relatively small networks.
@@ -165,13 +169,13 @@ The largest length selected the network component of the study. The following co
 #| eval: false
 
 CREATE TABLE porto_alegre_net_largest AS
----- Obtain again table classifying nodes in different components		    
+---- Obtain again table classifying nodes in different components           
 WITH porto_alegre_net_component AS (
 SELECT 
   * 
 FROM 
   pgr_strongComponents('SELECT
-							   ogc_fid AS id,
+                               ogc_fid AS id,
                                fromid AS source,
                                toid AS target,
                                weight AS cost 
@@ -179,27 +183,27 @@ FROM
                               porto_alegre_net_pre')),
 --- Calculate the largest component from the network
 largest_component_net AS (
-	SELECT 
-		component
-	FROM 
-	 	component_analysis_network_porto 
-	LIMIT 1),
+    SELECT 
+        component
+    FROM 
+        component_analysis_network_porto 
+    LIMIT 1),
 --- Using the largest component from the network to filter
 largeset_component_network_porto AS (
 SELECT
-	*  
+    *  
 FROM
-	porto_alegre_net_component,
-	largest_component_net
+    porto_alegre_net_component,
+    largest_component_net
 WHERE 
-	porto_alegre_net_component.component = largest_component_net.component)
+    porto_alegre_net_component.component = largest_component_net.component)
 SELECT 
-	net_multi_component.*
+    net_multi_component.*
 FROM 
-	porto_alegre_net_pre AS net_multi_component,
-	largeset_component_network_porto AS net_largest_component
+    porto_alegre_net_pre AS net_multi_component,
+    largeset_component_network_porto AS net_largest_component
 WHERE  
-	net_multi_component.fromid IN (net_largest_component.node);
+    net_multi_component.fromid IN (net_largest_component.node);
 ```
 
 #### Flooding mask
@@ -232,18 +236,18 @@ porto_alegre_ghs_bbox AS(
         porto_alegre_ghs),
 ---Subdivide the flood extent to increase spatial indexes performance 
 flooding_sul_subdivided AS (
-		SELECT 
-			st_subdivide(geom) as the_geom
-		FROM
-			flooding_rio_grande_do_sul)	
+        SELECT 
+            st_subdivide(geom) as the_geom
+        FROM
+            flooding_rio_grande_do_sul) 
 ---- Select the flooding subunits that intersects with the previous bounding box
 SELECT 
-	flooding_sul_subdivided.* 
+    flooding_sul_subdivided.* 
 FROM 
-	flooding_sul_subdivided, 
-	porto_alegre_ghs_bbox
+    flooding_sul_subdivided, 
+    porto_alegre_ghs_bbox
 WHERE 
-	st_intersects(flooding_sul_subdivided.the_geom, porto_alegre_ghs_bbox.geom_bbox);
+    st_intersects(flooding_sul_subdivided.the_geom, porto_alegre_ghs_bbox.geom_bbox);
 ```
 
 Additionally, the following code dissolve the borders to break the multipolygon into simple polygons to improve the performance of functions such as st_difference() ([link](https://icarto.es/en/improve-performance-making-the-difference-between-two-layers-with-postgis/)).
@@ -285,7 +289,6 @@ CREATE INDEX idx_porto_alegre_net_largest_source ON porto_alegre_net_largest USI
 CREATE INDEX idx_porto_alegre_net_largest_target ON porto_alegre_net_largest USING btree(toid);
 CREATE INDEX idx_porto_alegre_net_largest_id ON porto_alegre_net_largest USING btree(ogc_fid);
 CREATE INDEX idx_porto_alegre_net_largest_cost ON porto_alegre_net_largest USING btree(weight);
-
 ```
 
 
@@ -296,7 +299,7 @@ SET max_parallel_workers_per_gather =4;
 
 ```{sql}
 #| eval: false
-CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
+CLUSTER porto_alegre_net_largest USING porto_alegre_net_largest;
 ```
 
 #### Network after the disaster
@@ -316,11 +319,11 @@ A naive approach overlaying the flooding mask with the road network by the funct
 ------------- network inside
 CREATE TABLE porto_alegre_street_in_v2 AS
 SELECT net.id,
-	CASE 
-		WHEN ST_Contains(flood.the_geom, net.the_geom)
-		THEN net.the_geom
-		ELSE st_intersection(net.the_geom, flood.the_geom)
-	END AS  geom
+    CASE 
+        WHEN ST_Contains(flood.the_geom, net.the_geom)
+        THEN net.the_geom
+        ELSE st_intersection(net.the_geom, flood.the_geom)
+    END AS  geom
 FROM porto_alegre_net_largest net
 JOIN flooding_subdivided_porto flood
 ON st_intersects(net.the_geom, flood.the_geom);
@@ -332,12 +335,13 @@ ON st_intersects(net.the_geom, flood.the_geom);
 ```{sql}
 #| eval: false
 ----------------- network outside
+----------------- network outside
 CREATE TABLE porto_alegre_street_out_v2 AS
 SELECT net.*
 FROM porto_alegre_net_largest net
 WHERE net.id NOT IN (
-	SELECT net.id
-	FROM porto_alegre_street_in_v2 net);
+    SELECT net.id
+    FROM porto_alegre_street_in_v2 net);
 
 ```
 
@@ -348,27 +352,27 @@ WHERE net.id NOT IN (
 
 CREATE TABLE porto_alegre_net_outside_v2 AS
 WITH porto_alegre_ghs AS(
-	SELECT 
-	   ghs.*
-	FROM
-	   urban_center_4326 AS ghs
-	JOIN
-	   nuts 
-	ON 
-	   st_intersects(nuts.geom, ghs.geom)
-	WHERE 
-		nuts.shapename = 'Porto Alegre'),
+    SELECT 
+       ghs.*
+    FROM
+       urban_center_4326 AS ghs
+    JOIN
+       nuts 
+    ON 
+       st_intersects(nuts.geom, ghs.geom)
+    WHERE 
+        nuts.shapename = 'Porto Alegre'),
 --- Bounding Box that contained the GHS in Porto Alegre
 porto_alegre_ghs_bbox AS(
-	SELECT 
-		st_setsrid(st_extent(geom),4326) as geom_bbox
-	FROM 
-		porto_alegre_ghs),
+    SELECT 
+        st_setsrid(st_extent(geom),4326) as geom_bbox
+    FROM 
+        porto_alegre_ghs),
 flooding_sul_subdivided AS (
-		SELECT 
-			st_subdivide(geom) as the_geom
-		FROM
-			flooding_rio_grande_do_sul),
+        SELECT 
+            st_subdivide(geom) as the_geom
+        FROM
+            flooding_rio_grande_do_sul),
 exterior_ring_porto_alegre_v2 AS (
 SELECT 
     ST_ExteriorRing((ST_Dump(union_geom)).geom) as geom
@@ -383,16 +387,16 @@ FROM (
         ST_Intersects(flood.the_geom, bbox.geom_bbox)
 ) AS subquery)
 SELECT net.id,
- 	CASE
-		WHEN NOT ST_Contains(flood.geom, net.the_geom)
- 		THEN net.the_geom
-			ELSE st_intersection(net.the_geom, flood.geom)
-	END AS  geom,
-	net.target,
-	   net.source,
-	   cost,
-	   "unidirectid",
-	   "bidirectid"
+    CASE
+        WHEN NOT ST_Contains(flood.geom, net.the_geom)
+        THEN net.the_geom
+            ELSE st_intersection(net.the_geom, flood.geom)
+    END AS  geom,
+    net.target,
+       net.source,
+       cost,
+       "unidirectid",
+       "bidirectid"
 FROM
 porto_alegre_net_largest AS net
 JOIN exterior_ring_porto_alegre_v2 flood ON
@@ -406,7 +410,7 @@ st_intersects(net.the_geom, flood.geom);
 ```{sql}
 #| eval: false
 
---- For the network
+---- For the network
 CREATE INDEX idx_porto_alegre_net_outside_v2 ON porto_alegre_net_outside_v2 USING gist (geom);
 
 CLUSTER porto_alegre_net_outside_v2 USING idx_porto_alegre_net_outside_v2;
@@ -433,11 +437,11 @@ CLUSTER flooding_symple USING flooding_symple_idx;
 
 CREATE TABLE difference_outside_flood_v3 AS
 SELECT net.id,
-		target,
-		source,
-		cost,
-		unidirectid,
-		bidirectid,
+        target,
+        source,
+        cost,
+        unidirectid,
+        bidirectid,
 st_difference(net.geom, flood.the_geom) AS the_geom
 FROM porto_alegre_net_outside_v2 AS net,
 flooding_symple  AS flood;
@@ -461,22 +465,22 @@ FROM difference_outside_flood_v2;
 
 ## Routable network
 
-
 ```{sql}
-#| eval:  false
+#| eval: false
+#| connection: eisenberg_connection
 
 SELECT pgr_createVerticesTable(
-			'porto_alegre_net_largest',
-			the_geom:= 'the_geom',
-			source:= 'fromid',
-			target:= 'toid')
+            'porto_alegre_net_largest',
+            the_geom:= 'the_geom',
+            source:= 'fromid',
+            target:= 'toid')
 
 ```
 
 
 ```{sql}
 #| eval: false
-
+#| connection: eisenberg_connection
 
 ALTER TABLE od_2728
 ADD COLUMN id SERIAL PRIMARY KEY;
@@ -543,17 +547,17 @@ The following code created 1258 points representing the origin or destination re
 CREATE TABLE regular_point_od AS (
 WITH multipoint_regular AS(
 select 
-	I_Grid_Point_Series(geom, 0.01,0.01, false) AS geom
-	from porto_alegre_bbox as geom),
+    I_Grid_Point_Series(geom, 0.01,0.01, false) AS geom
+    from porto_alegre_bbox as geom),
 point_regular AS(
 SELECT 
-	st_setsrid((st_dump(geom)).geom, 4326)::geometry(Point, 4326) AS geom
+    st_setsrid((st_dump(geom)).geom, 4326)::geometry(Point, 4326) AS geom
 FROM  multipoint_regular)
 SELECT 
-	row_number() over() AS id,
-	geom
+    row_number() over() AS id,
+    geom
 FROM 
-	point_regular);
+    point_regular);
 ```
 
 The application of two indexes improved further queries on this new table. This was recommended because these points were outside the network requiring snapping, which is a spatial operation with relatively high computational costs. 
@@ -570,12 +574,12 @@ Apart from indexing the geometry column and the id, the query is constrained to 
 #### Weighted on building volume
 
 ```{r}
-#| eval: false
+#| eval: false 
 
 # Import data
 ## raster
 buildings <- terra::rast('/home/ricardo/HeiGIT-Github/do_not_push_too_large/GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0/GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0.tif')
-pop_ghs <- 2728133
+pop_ghs <- 2728
 ## AoI
 aoi_bbox <- sf::read_sf('/home/ricardo/HeiGIT-Github/data_required_porto_alegre/porto_alegre_bbox_derived.geojson')
 ## reproject for clipping
@@ -584,14 +588,138 @@ build_cropped <- crop(buildings, aoi_bbox_reproj)
 ## reproject for sampling
 build_4326 <- terra::project(build_cropped, crs(aoi_bbox))
 ## weighted sampling
-od <- spatSample(pop_cropped, pop_ghs, "weights", as.points=TRUE, ) |> st_as_sf() |> st_transform(4326)
+od <- spatSample(build_cropped, pop_ghs, "weights", as.points=TRUE, ) |> st_as_sf() |> st_transform(4326)
 names(od)[1] <- 'building'
-dbWriteTable(connection, c("hegit","od_77763"), od, append=T) 
 DBI::dbWriteTable(connection, 
-                  DBI::Id(schema = "heigit", table = "od_77763"), 
+                  DBI::Id(schema = "public", table = "od_2728"), 
                   od)
 ```
 
+Snap the points
+
+```{sql}
+#| eval: false
+#| connection: eisenberg_connection
+
+--- Create ID column
+
+ALTER TABLE od_2728
+ADD COLUMN id serial primary key;
+
+--- Snap all the Apoints based on building density to the closest vertice within the network
+CREATE TABLE od_2728_snapped AS
+SELECT DISTINCT ON (net.id)
+       pt.id AS pt_id,
+       net.id AS net_id,
+       net.the_geom
+FROM 
+(select * 
+FROM 
+    od_2728 as pt) as pt
+CROSS JOIN
+LATERAL (SELECT
+        * 
+        FROM porto_alegre_net_largest_vertices_pgr AS net
+         ORDER BY net.the_geom <-> pt.geometry 
+        LIMIT 1) AS net;
+--- Create 100 origin samples from the snapped points
+
+CREATE TABLE weight_sampling_100_origin  AS
+WITH porto_100_origin AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped 
+        ORDER BY random() LIMIT 100)
+        SELECT * FROM  porto_100_origin;  
+--- Create 100 destination from the snapped points
+
+CREATE TABLE weight_sampling_100_destination  AS
+WITH porto_100_destination AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped 
+        ORDER BY random() LIMIT 100)
+        SELECT * FROM  porto_100_destination;  
+--- Indeces on origin
+CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(pt_id);
+CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(net_id);
+CREATE INDEX weight_sampling_100_origin_idx_the_geom ON weight_sampling_100_origin USING gist(the_geom);
+--- Indeces on destination
+CREATE INDEX weight_sampling_1000_destination_idx_pt_id ON weight_sampling_1000_destination USING btree(pt_id);
+CREATE INDEX weight_sampling_1000_destination_idx_net_id ON weight_sampling_1000_destination USING btree(net_id);
+CREATE INDEX weight_sampling_1000_destination_idx_the_geom ON weight_sampling_1000_destination USING gist(the_geom);
+---- Cluster
+CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
+---- Vacuum clean
+VACUUM(full, ANALYZE) weight_sampling_100_origin;
+VACUUM(full, ANALYZE) weight_sampling_100_destination;
+VACUUM(full, ANALYZE) porto_alegre_net_largest;
+```
+
+```{sql}
+#| eval: false
+
+---- add ID
+ALTER TABLE od_77763
+ADD COLUMN id serial;
+---- Rename the column name
+ALTER TABLE od_77763
+rename "GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0" 
+to "build";
+---- create spatial index
+CREATE INDEX idx_od_77763_geom ON od_77763
+       USING gist(geometry);
+CREATE INDEX idx_od_77763_id on weighted_sampling
+       USING btree(id);
+CREATE INDEX idx_od_77763_geom_build on weighted_sampling 
+       USING btree("build");
+---- The current total is 77763
+```
+
+
+```{sql}
+#| eval: false
+
+CREATE TABLE od_40420_snapped_origin AS
+SELECT DISTINCT ON (net.id)
+	   pt.id AS pt_id,
+	   net.id AS net_id,
+	   net.the_geom
+FROM 
+(select * 
+FROM 
+	od_77763 as pt) as pt
+CROSS JOIN
+LATERAL (SELECT
+		* 
+		FROM porto_alegre_net_largest_vertices_pgr AS net
+		 ORDER BY net.the_geom <-> pt.geometry 
+		LIMIT 1) AS net;
+
+```
+
+
+```{sql}
+#| eval: false
+
+CREATE TABLE od_40420_snapped_destination AS
+SELECT DISTINCT ON (net.id)
+	   pt.id AS pt_id,
+	   net.id AS net_id,
+	   net.the_geom
+FROM 
+(select * 
+FROM 
+	od_77763 as pt) as pt
+CROSS JOIN
+LATERAL (SELECT
+		* 
+		FROM porto_alegre_net_largest_vertices_pgr AS net
+		 ORDER BY net.the_geom <-> pt.geometry 
+		LIMIT 1) AS net;
+```
 
 #### Hospitals
 
@@ -652,47 +780,197 @@ CREATE INDEX idx_hospital_rs_node_v2 ON hospital_rs_node_v2 USING btree(id);
 
 ### Centrality Analysis: 
 
+```{sql}
+#| eval: false
+--- Pre-scenario
+ CREATE TABLE centrality_100_100_dijkstra AS
+ SELECT   b.id,
+ b.the_geom,
+ count(the_geom) as centrality 
+ FROM  pgr_dijkstra('SELECT  id,
+                             source,
+                            target,
+                            cost
+                      FROM porto_alegre_net_largest',
+                      ARRAY(SELECT net_id AS start_id FROM weight_sampling_100_origin  ),
+                      ARRAY(SELECT net_id AS end_id FROM weight_sampling_100_destination ),
+                      directed := TRUE) j
+                      left JOIN porto_alegre_street_united AS b
+                      ON j.edge = b.id
+                      GROUP BY  b.id, b.the_geom
+                      ORDER BY centrality DESC;  
+                      
+                     
+                     select * from porto_alegre_net_largest ;
+---- Adding the bidirectid by joining the dijkstra table with the original
+CREATE TABLE centrality_weighted_100_bidirect AS
+SELECT t1.*,
+    t2."bidirectid"
+FROM
+    centrality_100_100_dijkstra t1
+JOIN
+    porto_alegre_net_largest t2
+ON
+    t1.id = t2.id;
+--- The final product requries  79941
+select max("bidirectid") from centrality_weighted_100_bidirect;
+create sequence bididirect_id_weight start 79941;
+update centrality_weighted_100_bidirect
+set "bidirectid" = nextval('bididirect_id_weight')
+where "bidirectid" is null ;
+---- verify
+select count(*) 
+from centrality_weighted_100_bidirect 
+where "bidirectid" is null; --- 0
+----
+create table centrality_weighted_100_bidirect_group as 
+select 
+       "bidirectid",
+       sum(centrality) as  centrality
+from centrality_weighted_100_bidirect
+group by "bidirectid"; --- this sum the centrality for duplicated bidirect id
+---
+---- now recover the id
+create table centrality_weighted_100_bidirect_group_id as 
+select t1.*, t2.id
+from centrality_weighted_100_bidirect_group t1
+join centrality_weighted_100_bidirect t2 
+on t1."bidirectid" = t2."bidirectid"; 
+---- add geometries
+create table centrality_weighted_100_bidirect_cleaned as
+select t1.*,
+    t2.the_geom,
+    t2.target,
+    t2.source,
+    t2.cost,
+    t2."unidirectid"
+from 
+    centrality_weighted_100_bidirect_group_id t1
+join
+    porto_alegre_net_largest t2
+on
+    t1.id = t2.id;
+--- The final product is: centrality_weighted_100_bidirect_cleaned
+
+```
+
+
+```{sql}
+#| eval: false
+
+--- Post scenario
+
+----routing
+ CREATE TABLE centrality_1000_1000_dijkstra_post AS
+ SELECT   b.id,
+ b.the_geom,
+ count(the_geom) as centrality 
+ FROM  pgr_dijkstra('SELECT  id,
+                             source,
+                            target,
+                            cost
+                      FROM porto_alegre_street_united',
+                      ARRAY(SELECT net_id AS start_id FROM weight_sampling_1000_origin  ),
+                      ARRAY(SELECT net_id AS end_id FROM weight_sampling_1000_destination ),
+                      directed := TRUE) j
+                      left JOIN porto_alegre_street_united AS b
+                      ON j.edge = b.id
+                      GROUP BY  b.id, b.the_geom
+                      ORDER BY centrality DESC;  
+---- Adding the bidirectid by joining the dijkstra table with the original
+CREATE TABLE centrality_weighted_1000_bidirect_post AS
+SELECT t1.*,
+    t2."bidirectid"
+FROM
+    centrality_1000_1000_dijkstra_post t1
+JOIN
+    porto_alegre_street_united t2
+ON
+    t1.id = t2.id;
+--- The final product requries  79941
+select max("bidirectid") from centrality_weighted_1000_bidirect_post; ---62347
+create sequence bididirect_id_weight_post start 62347;
+update centrality_weighted_1000_bidirect_post
+set "bidirectid" = nextval('bididirect_id_weight_post')
+where "bidirectid" is null ;
+   ---- verify
+select count(*) 
+from centrality_weighted_1000_bidirect_post 
+where "bidirectid" is null; --- 0              
+----
+create table centrality_weighted_1000_bidirect_group_post as 
+select 
+       "bidirectid",
+       sum(centrality) as  centrality
+from centrality_weighted_1000_bidirect_post
+group by "bidirectid"; --- this sum the centrality for duplicated bidirect id
+---        
+---- now recover the id
+create table centrality_weighted_1000_bidirect_group_post_id as 
+select t1.*, t2.id
+from centrality_weighted_1000_bidirect_group_post t1
+join centrality_weighted_1000_bidirect_post t2 
+on t1."bidirectid" = t2."bidirectid"; 
+---- add geometries
+create table centrality_weighted_1000_bidirect_cleaned_post as
+select t1.*,
+    t2.the_geom,
+    t2.target,
+    t2.source,
+    t2.cost,
+    t2."unidirectid"
+from 
+    centrality_weighted_1000_bidirect_group_post_id t1
+join
+    porto_alegre_street_united t2
+on
+    t1.id = t2.id;
+
+```
+
 #### Edge betweenness
 
 ```{sql}
 #| eval: false
-
+#| connection: eisenberg_connection
 
 CREATE TABLE od_40420_snapped_origin AS
 SELECT DISTINCT ON (net.id)
-	   pt.id AS pt_id,
-	   net.id AS net_id,
-	   net.the_geom
+       pt.id AS pt_id,
+       net.id AS net_id,
+       net.the_geom
 FROM 
 (select * 
 FROM 
-	od_77763 as pt) as pt
+    od_77763 as pt) as pt
 CROSS JOIN
 LATERAL (SELECT
-		* 
-		FROM porto_alegre_net_largest_vertices_pgr AS net
-		 ORDER BY net.the_geom <-> pt.geometry 
-		LIMIT 1) AS net;
+        * 
+        FROM porto_alegre_net_largest_vertices_pgr AS net
+         ORDER BY net.the_geom <-> pt.geometry 
+        LIMIT 1) AS net;
 
 ```
 
 ```{sql}
 #| eval: false
+#| connection: eisenberg_connection
 
 CREATE TABLE random_272_destination  AS
 with random_272_destination AS (
-		SELECT
-			* 
-		FROM 
-			od_40420_snapped_origin 
-		ORDER BY random() LIMIT 200)
-		SELECT * FROM  random_272_destination;	
+        SELECT
+            * 
+        FROM 
+            od_40420_snapped_origin 
+        ORDER BY random() LIMIT 200)
+        SELECT * FROM  random_272_destination;  
+
 ```
 
 
 ```{sql}
 #| eval: false
-
+#| connection: eisenberg_connection
 
 CREATE TEMP TABLE vertices_lookup_v5 
 AS             
@@ -718,9 +996,9 @@ SELECT * FROM vertices;
 
 ```
 
-
 ```{sql}
 #| eval: false
+#| connection: eisenberg_connection
 
 CREATE TABLE porto_272_272_dijkstra AS
  WITH pgr_result AS (
@@ -736,11 +1014,41 @@ SELECT (pgr_dijkstra).*, a.fid, a.tid FROM pgr_result
 JOIN vertices_lookup_v5 a
 ON (pgr_dijkstra).start_vid = a.fv
 AND (pgr_dijkstra).end_vid = a.tv;
+
+```
+
+```{sql}
+#| eval: false
+#| connection: eisenberg_connection
+
+CREATE TEMP TABLE vertices_lookup_v5                     
+AS             
+WITH all_pairs AS (
+  SELECT f.net_id AS fid, f.the_geom as fgeom,
+         t.net_id AS tid, t.the_geom as tgeom
+    FROM random_272_origin AS f,                                                                      
+         random_272_destination AS t               
+),                                                                                     
+vertices AS (
+  SELECT fid, tid,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> fgeom
+       LIMIT 1) as fv,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> tgeom
+       LIMIT 1) as tv
+  FROM all_pairs
+)
+SELECT * FROM vertices;
+
 ```
 
 
 ```{sql}
 #| eval: false
+#| connection: eisenberg_connection
 
 
 CREATE TEMP TABLE vertices_lookup_v5                     
@@ -767,6 +1075,7 @@ SELECT * FROM vertices;
 
 ```
 
+
 #### Closeness
 
 ```{sql}
@@ -782,21 +1091,21 @@ SELECT * FROM pgr_dijkstraCostMatrix(
   true)),
 closeness AS (
  SELECT dc.start_vid,
-		sum(agg_cost)::int AS closeness
+        sum(agg_cost)::int AS closeness
 FROM dijkstra_cost dc
 GROUP BY dc.start_vid
 ORDER BY closeness DESC)
 SELECT 
-	h.cd_cnes,
-	h.ds_cnes,
-	c.closeness,
-	h.distance,
-	h.geom_node,
-	h.geom_hospital
+    h.cd_cnes,
+    h.ds_cnes,
+    c.closeness,
+    h.distance,
+    h.geom_node,
+    h.geom_hospital
 FROM 
-	closeness AS c
+    closeness AS c
 LEFT JOIN
-	hospital_rs_node_v3 AS h ON  c.start_vid = h.id;
+    hospital_rs_node_v3 AS h ON  c.start_vid = h.id;
 ```
 
 #### Vulnerability: Socioeconomic indicators

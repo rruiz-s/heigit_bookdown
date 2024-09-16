@@ -6,7 +6,7 @@
 #| warning: false
 
 # Load packages
-lapply(c("tidyverse","DT","leaflet","sf","DBI","leafem", "RPostgres","mapview","leafpop","lattice","leafsync"),
+lapply(c("tidyverse","DT","leaflet","sf","DBI", "RPostgres", "mapview","leafpop","leaflet","terra"),
        require,
        character.only =T)
 
@@ -19,7 +19,8 @@ eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
                           port = 25432)
 ```
 
-## Preparation
+## Data preparation
+### OSM & ORS data
 
 The code @lst-ghs-osmium covered the following area:
 
@@ -30,14 +31,10 @@ osmium extract -b -51.2791,-30.1722,-50.9407,-29.8048 sul-240501.osm.pbf -o puer
 ```
 
 ![](/media/bbox_porto_alegre_ghs.png){fig-align="center" width="50%"}
-
-## Framework
-
-## OSM & ORS
+Importing the geometries from R from Marcel
 
 ```{r}
-#| message: false
-#| warning: false
+#| eval: false
 
 # Load data
 ors_network <- st_read(eisenberg_connection, layer="porto_alegre_net_pre")
@@ -70,14 +67,283 @@ m2 <- mapview(intersection_ors,
               popup=popupTable(intersection_ors))
 
 sync(m1,m2) 
+```
+
+
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+
+mapview::mapview(top_5_network,
+                zcol="component",
+                lwd=.5,
+                popup=popupTable(top_5_network,
+                                 zcol=c("component","distance")))
+```
+
+## Sampling points
+
+
+```{r}
+#| eval: false
+#| connection: eisenberg_connection
+
+
+library(mapview)
+library(raster)
+
+pal = mapviewPalette("mapviewTopoColors")
+
+ghs_building_data <- system.file("extdata", "kiliNDVI.tif", package = "mapview")
+kiliNDVI <- stack(kili_data)
+
+mapview(kiliNDVI[[1]], col.regions = pal(100), at = seq(-0.2, 1, 0.2), legend = TRUE)
+```
+
+
+## Network
+### Post-event
+
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+
+--- pre_net_subset
+CREATE TABLE porto_alegre_net_largest_subset AS                  
+SELECT
+  *
+FROM 
+  porto_alegre_net_largest AS net
+WHERE 
+net.the_geom && 
+st_setsrid(
+            st_makeenvelope(
+              -51.214287,-30.020226,-51.12934,-29.945862),4326)
+--- subset_network_in
+
+------------- network inside
+
+CREATE TEMPORARY TABLE flooding_subdivided_porto_join AS
+SELECT st_union(the_geom) AS the_geom FROM flooding_subdivided_porto ;
+
+----
+CREATE TABLE porto_alegre_street_in_v3 AS
+SELECT net.id,
+    CASE 
+        WHEN ST_Contains(flood.the_geom, net.the_geom)
+        THEN net.the_geom
+        ELSE st_intersection(net.the_geom, flood.the_geom)
+    END AS  geom
+FROM porto_alegre_net_largest_subset net
+JOIN flooding_subdivided_porto_join flood
+ON st_intersects(net.the_geom, flood.the_geom);         
+
+--- subset_network_out
+CREATE TABLE porto_alegre_street_out_v3 AS
+SELECT net.*
+FROM porto_alegre_net_largest_subset
+WHERE net.id NOT IN (
+    SELECT net.id
+    FROM porto_alegre_street_in_v3 net);
+    
+---- network outside
+
+CREATE TABLE porto_alegre_net_outside_v3 AS
+WITH porto_alegre_ghs AS(
+    SELECT 
+       ghs.*
+    FROM
+       urban_center_4326 AS ghs
+    JOIN
+       nuts 
+    ON 
+       st_intersects(nuts.geom, ghs.geom)
+    WHERE 
+        nuts.shapename = 'Porto Alegre'),
+--- Bounding Box that contained the GHS in Porto Alegre
+porto_alegre_ghs_bbox AS(
+    SELECT 
+        st_setsrid(st_extent(geom),4326) as geom_bbox
+    FROM 
+        porto_alegre_ghs),
+flooding_sul_subdivided AS (
+        SELECT 
+            st_subdivide(geom) as the_geom
+        FROM
+            flooding_rio_grande_do_sul),
+exterior_ring_porto_alegre_v2 AS (
+SELECT 
+    ST_ExteriorRing((ST_Dump(union_geom)).geom) as geom
+FROM (
+    SELECT 
+        ST_Union(flood.the_geom) as union_geom
+    FROM 
+        porto_alegre_ghs_bbox as bbox
+    JOIN 
+        flooding_sul_subdivided as flood
+    ON 
+        ST_Intersects(flood.the_geom, bbox.geom_bbox)
+) AS subquery)
+SELECT net.id,
+    CASE
+        WHEN NOT ST_Contains(flood.geom, net.the_geom)
+        THEN net.the_geom
+            ELSE st_intersection(net.the_geom, flood.geom)
+    END AS  geom,
+    net.target,
+       net.source,
+       cost,
+       "unidirectid",
+       "bidirectid"
+FROM
+porto_alegre_net_largest_subset AS net
+JOIN exterior_ring_porto_alegre_v2 flood ON
+st_intersects(net.the_geom, flood.geom)
+WHERE 
+  net.the_geom && 
+    st_setsrid(
+    st_makeenvelope(-51.214287,-30.020226,-51.12934,-29.945862),4326);
+----
+--- For the network
+CREATE INDEX idx_porto_alegre_net_outside_v2 ON porto_alegre_net_outside_v2 USING gist (geom);
+
+CLUSTER porto_alegre_net_outside_v2 USING idx_porto_alegre_net_outside_v2;
+
+--- For the flooding mask
+CREATE INDEX flooding_sul_subdivided_idx ON flooding_sul_subdivided USING gist (the_geom);
+
+CLUSTER flooding_sul_subdivided USING flooding_sul_subdivided_idx;
+
+---- Before doing difference
+VACUUM(FULL, ANALYZE) porto_alegre_net_outside_v2;
+VACUUM(FULL, ANALYZE) flooding_sul_subdivided;
+----
+CREATE INDEX idx_porto_alegre_net_outside_v3 ON porto_alegre_net_outside_v3 USING gist (geom);
+
+CLUSTER porto_alegre_net_outside_v3 USING idx_porto_alegre_net_outside_v3;
+
+--- For the flooding mask
+CREATE INDEX flooding_subdivided_porto_join_idx ON flooding_subdivided_porto_join USING gist (the_geom);
+
+CLUSTER flooding_subdivided_porto_join USING flooding_subdivided_porto_join_idx ;
+
+---- Before doing difference
+VACUUM(FULL, ANALYZE) porto_alegre_net_outside_v3;
+VACUUM(FULL, ANALYZE) flooding_subdivided_porto_join;
+
+----
+
+CREATE TABLE flooding_symple as 
+SELECT st_union(geom) as the_geom FROM flooding_cleaned_porto_union_simple;
+
+CREATE INDEX flooding_symple_idx ON flooding_symple USING gist (the_geom);
+CLUSTER flooding_symple USING flooding_symple_idx;
+
+CREATE TABLE difference_outside_flood_v4 AS
+SELECT net.id,
+        target,
+        source,
+        cost,
+        unidirectid,
+        bidirectid,
+st_difference(net.geom, flood.the_geom) AS the_geom
+FROM porto_alegre_net_outside_v3 AS net,
+flooding_symple  AS flood;
+
+-----------
+CREATE TABLE porto_alegre_street_united_v3 AS
+SELECT *
+FROM porto_alegre_street_out_v3
+UNION
+SELECT *
+FROM difference_outside_flood_v4;
+
+--- Final product: porto_alegre_street_united_v2
+```
+
+
+```{r}
+
+porto_alegre_net_pre <- sf::st_read(eisenberg_connection, "porto_alegre_net_largest")
+centrality_pre <- sf::st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
+flooding <- sf::st_read(eisenberg_connection, "flooding_cleaned_porto")
+net_in <- sf::st_read(eisenberg_connection, "porto_alegre_street_in_v2")
+## subset
+subset_network_pre <-  sf::st_read(eisenberg_connection, "porto_alegre_net_largest_subset")
+subset_network_in <- sf::st_read(eisenberg_connection, "porto_alegre_street_in_v3")
+subset_network_out <- sf::st_read(eisenberg_connection, "porto_alegre_street_out_v3")
+subset_network_outside_flood <-sf::st_read(eisenberg_connection, "difference_outside_flood_v4")
+subset_network_post <- sf::st_read(eisenberg_connection, "porto_alegre_street_united_v3")
+flooding <- sf::st_read(eisenberg_connection, "flooding_symple")
   
+
+## centrality
+centrality_pre_map <- mapview(subset_network_pre,
+                              color="#d4e7e7",
+                              lwd= 0.8,
+                             layer.name="Pre-flooding network",
+                             popup=popupTable(subset_network_pre,
+                                              zcol=c("id","source","target","bidirectid")))
+
+```
+
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+
+
+CREATE TABLE subset_post_scenario_bbox AS
+SELECT st_setsrid(
+            st_makeenvelope(
+              -51.214287,-30.020226,-51.12934,-29.945862),4326) AS geom;
 
 ```
 
 
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
 
-## Sampling points
-## Network
+
+---- Generate the subset to be visualize
+
+CREATE TABLE porto_alegre_net_largest_subset AS                  
+SELECT
+  st_intersection(net.the_geom, bbox.geom) 
+FROM 
+  porto_alegre_net_largest AS net
+WHERE 
+porto_alegre_net_largest.the_geom && subset_post_scenario_bbox; 
+```
+
+
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+
+SELECT
+  st_intersection(net.the_geom, bbox.geom)
+FROM 
+  porto_alegre_net_largest AS net,
+subset_post_scenario_bbox AS bbox;
+
+```
+
+### Performance
+
+```{r}
+library(readODS)
+library(ggplot2)
+performance <- readODS::read_ods("metrics.ods")
+df <- performance |> select(c("number_od","method","algorithm","time","max_centrality","count_rows")) |> filter(!is.na(time) & method=='naive')
+
+ggplot(df,aes(x=number_od, y=time, group = algorithm)) +
+  geom_line(aes(color=algorithm)) +
+   geom_point(aes(color=algorithm))
+```
+
+### Centrality
+
 
 ### Closeness
 
@@ -112,12 +378,15 @@ DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes"
                 backgroundSize = '98% 88%',
   backgroundRepeat = 'no-repeat',
   backgroundPosition = 'center') 
-
 ```
+
 
 ```{r}
 
+# Import he data
 ## hospital with closenesss values
+closseness <-sf::st_read(eisenberg_connection, 
+                            layer = "clossness_hospital_porto")
 closseness_df <- closseness |>  arrange(ds_cnes, closeness) |>
                     mutate(lng= 
                               unlist(map(geom_hospital,1)),
