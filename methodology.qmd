@@ -3,9 +3,17 @@
 #| output: false
 #| warning: false
 
-lapply(c("tidyverse","DT","leaflet","sf","htmltools", "DBI"),
+lapply(c("tidyverse","DT","leaflet","sf","htmltools", "DBI", "mapview","leafpop"),
        require,
        character.only =T)
+
+eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
+                          user= "docker",
+                          password = "docker",
+                          host = "localhost",
+                          dbname="gis",
+                          port = 25432)
+
 ```
 
 # Methodology
@@ -15,13 +23,25 @@ lapply(c("tidyverse","DT","leaflet","sf","htmltools", "DBI"),
 #| echo: false
 #| warning: false
 #| message: false
+
 data_df <- read_csv('/home/ricardo/HeiGIT-Github/data_required_porto_alegre/requried_data.csv') 
 
 data_df$Link <-  paste0('<a href="', data_df$Link ,'">', 'Link </a>')
 
-DT::datatable(data_df, class ='compact', rownames= FALSE, escape = FALSE, caption="Data description")
+DT::datatable(data_df, class='compact', rownames=FALSE, escape= FALSE, caption = 'Data description',
+              extensions="Buttons",
+                         options=list(
+                           dom="Bfrtip",
+                           buttons=c("copy","csv","pdf"),
+                            initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+    "}")
+                                  )
+              ) 
 
 ```
+
 ## Framework
 
 ![](/media/workflow_methodology.png)
@@ -446,6 +466,65 @@ st_difference(net.geom, flood.the_geom) AS the_geom
 FROM porto_alegre_net_outside_v2 AS net,
 flooding_symple  AS flood;
 ```
+
+
+```{r}
+#| eval: false
+
+porto_alegre_net_pre <- sf::st_read(eisenberg_connection, "porto_alegre_net_largest")
+centrality_pre <- sf::st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
+flooding <- sf::st_read(eisenberg_connection, "flooding_cleaned_porto")
+net_in <- sf::st_read(eisenberg_connection, "porto_alegre_street_in_v2")
+## subset
+subset_network_pre <-  sf::st_read(eisenberg_connection, "porto_alegre_net_largest_subset")
+subset_network_in <- sf::st_read("/home/ricardo/heigit_bookdown/data/porto_alegre_street_in_v3_subset.geojson")
+subset_network_out <- sf::st_read(eisenberg_connection, "porto_alegre_street_out_v3") |> st_as_sfc() 
+subset_network_outside_flood <-sf::st_read(eisenberg_connection, "difference_outside_flood_v4")
+subset_network_post <- sf::st_read(eisenberg_connection, "porto_alegre_street_united_v3")
+flooding <- sf::st_read(eisenberg_connection, "flooding_symple") 
+flooding <- st_union(flooding$the_geom, by_feature= FALSE)
+
+## centrality
+mapview(subset_network_pre,
+          color="#d4e7e7",
+          lwd= 0.5,
+          layer.name="Pre-flooding network",
+          popup=popupTable(subset_network_pre,
+          zcol=c("id","source","target","bidirectid"))) +
+  mapview(flooding,
+          color="darkblue",
+          alpha.regions= 0.5,
+          layer.name="Flooding layer") + 
+  mapview(subset_network_in,
+          color="red",
+          lwd= 0.5,
+          legend = FALSE,
+          hide = TRUE,
+          layer.name="Network in the flooding") +
+  mapview(subset_network_out,
+          color="darkcyan",
+          lwd= 0.5,
+          hide = TRUE,
+          layer.name="Flooding outside the network",
+          popup=popupTable(subset_network_out)) +
+  mapview(subset_network_outside_flood,
+          color="yellow",
+          lwd= 0.8,
+          legend = FALSE,
+          layer.name="Boundary network",
+          popup=popupTable(subset_network_outside_flood)) +
+    mapview(subset_network_post,
+          color="darkorange",
+          lwd= 0.8,
+          hide =TRUE,
+          layer.name="Post-flooding network",
+          popup=popupTable(subset_network_post))
+
+
+  
+
+```
+
 
 As a final step, they are merged.
 

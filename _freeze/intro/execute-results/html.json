@@ -1,8 +1,10 @@
 {
-  "hash": "04202ed9e170808a41ac88a947cccbb0",
+  "hash": "bf769a0b902bffbf895cfcb6dd397e3c",
   "result": {
-    "markdown": "# Introduction\n\n# MAP\n\nAÑadir \nAn innovative approach to assess the impact of urban flooding: Modeling\ntransportation system failure due to urban flooding\n\nTABLA\n\nThis is a book created from markdown and executable code.\n\nSee @knuth84 for additional discussion of literate programming.\n\n\n::: {.cell}\n\n```{.r .cell-code}\n1 + 1\n```\n\n::: {.cell-output .cell-output-stdout}\n```\n[1] 2\n```\n:::\n:::\n\n\n\n![](/media/framework_heigit.png)\n\nThe **research objective** is to improve urban resilience by identifying critical infrastructures necessary for accessing healthcare facilities, comparing road connectivity and accessibility. The following research questions are addressed in this study:\n\n## Research questions\n\n1. How did the road connectivity of the city network change after being impacted by the floodings in Rio Grande do Sul based on Edge Betweenness Centrality?\n2. Which healthcare facilities were most affected by the floodings based on\naccessibility metrics?\n3. In which area of a city’s network should decisions be made to reinforce or redesign routes to optimize healthcare accessibility and ensure minimal disruption during flood events?\n",
-    "supporting": [],
+    "markdown": "# Introduction\n\n# MAP\n\nAÑadir \nAn innovative approach to assess the impact of urban flooding: Modeling\ntransportation system failure due to urban flooding\n\n\n\nThis is a book created from markdown and executable code.\n\nSee @knuth84 for additional discussion of literate programming.\n\n\n::: {.cell}\n\n```{.r .cell-code}\n1 + 1\n```\n\n::: {.cell-output .cell-output-stdout}\n```\n[1] 2\n```\n:::\n:::\n\n\n\n![](/media/framework_heigit.png)\n\nThe **research objective** is to improve urban resilience by identifying critical infrastructures necessary for accessing healthcare facilities, comparing road connectivity and accessibility. The following research questions are addressed in this study:\n\n## Research questions\n\n1. How did the road connectivity of the city network change after being impacted by the floodings in Rio Grande do Sul based on Edge Betweenness Centrality?\n2. Which healthcare facilities were most affected by the floodings based on\naccessibility metrics?\n3. In which area of a city’s network should decisions be made to reinforce or redesign routes to optimize healthcare accessibility and ensure minimal disruption during flood events?\n",
+    "supporting": [
+      "intro_files"
+    ],
     "filters": [
       "rmarkdown/pagebreak.lua"
     ],
