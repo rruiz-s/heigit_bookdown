@@ -183,6 +183,15 @@ ORDER BY length DESC;
 
 ```
 
+
+```{r}
+#|eval: false
+
+dist_post <-st_read(eisenberg_connection, "post_component_analyze")
+
+
+```
+
 The largest length selected the network component of the study. The following code created this table ruling out the rest of the relatively small networks.
 
 ```{sql}
@@ -564,6 +573,160 @@ SELECT pgr_createVerticesTable(
 ALTER TABLE od_2728
 ADD COLUMN id SERIAL PRIMARY KEY;
 ```
+
+### Post-scenario
+
+```{sql}
+#| eval: false
+
+---- Create vertices
+SELECT pgr_createverticesTable('porto_alegre_net_post_v5');
+----- Obtain components to be used later as a filter
+CREATE TABLE component_analysis_network_porto_post AS
+WITH porto_alegre_net_component_post AS (
+SELECT 
+  * 
+FROM 
+  pgr_strongComponents('SELECT id,
+                               source,
+                               target,
+                               cost 
+                        FROM 
+                              porto_alegre_net_post_v5')),
+porto_alegre_net_component_geom_post AS (
+SELECT 
+    net.*,
+    net_geom.the_geom
+FROM 
+    porto_alegre_net_component_post AS net
+JOIN 
+    porto_alegre_net_post_v5  AS net_geom
+ON 
+    net.node = net_geom.source)
+SELECT 
+    component,
+    st_union(the_geom) AS the_geom,
+    st_length(st_union(the_geom)::geography)::int AS length
+FROM  
+    porto_alegre_net_component_geom_post
+GROUP BY component
+ORDER BY length DESC;
+--- Summarise by component
+CREATE TABLE components_network_post AS
+WITH porto_alegre_net_component_post AS (
+SELECT 
+  * 
+FROM 
+  pgr_strongComponents('SELECT
+                               id,
+                               source,
+                               target,
+                               cost 
+                        FROM 
+                              porto_alegre_net_post_v5')),
+--- Calculate the largest component from the network
+largests_component_net_post AS (
+    SELECT 
+        component,
+        the_geom,
+        length::int
+    FROM 
+        component_analysis_network_porto_post)
+SELECT * FROM largests_component_net_post WHERE ;
+
+---- Visualize which are more important
+CREATE TABLE main_components_post AS
+SELECT 
+	* 
+FROM 
+	components_network_post
+WHERE
+	component IN (21,14,5187);
+
+-------------- Remember to justify why 5
+
+CREATE TABLE prueba_largest_network_post AS
+WITH porto_alegre_net_component_post AS (
+SELECT 
+  * 
+FROM 
+  pgr_strongComponents('SELECT
+                               id,
+                               source,
+                               target,
+                               cost 
+                        FROM 
+                              porto_alegre_net_post_v5')),
+--- Calculate the largest component from the network
+largest_component_net_post AS (
+    SELECT 
+        component
+    FROM 
+        component_analysis_network_porto_post
+    LIMIT 5),
+--- Using the largest component from the network to filter
+largeset_component_network_porto_post AS (
+SELECT
+    *  
+FROM
+    porto_alegre_net_component_post,
+    largest_component_net_post
+WHERE 
+    porto_alegre_net_component_post.component = largest_component_net_post.component)
+SELECT 
+    net_multi_component.*
+FROM 
+    porto_alegre_net_post_v5 AS net_multi_component,
+    largeset_component_network_porto_post AS net_largest_component
+WHERE  
+    net_multi_component.source IN (net_largest_component.node);
+--- Create 100 origin samples from the snapped points post-scenario
+
+CREATE TABLE weight_sampling_100_origin_post  AS
+WITH porto_100_origin AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_post 
+        ORDER BY random() LIMIT 100)
+        SELECT * FROM  porto_100_origin;  
+--- Create 100 destination from the snapped points post-scenario
+
+CREATE TABLE weight_sampling_100_destination_post  AS
+WITH porto_100_destination AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_post 
+        ORDER BY random() LIMIT 100)
+        SELECT * FROM  porto_100_destination;  
+--- Indeces on origin
+CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(pt_id);
+CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(net_id);
+CREATE INDEX weight_sampling_100_origin_idx_the_geom ON weight_sampling_100_origin USING gist(the_geom);
+--- Indeces on destination
+CREATE INDEX weight_sampling_100_destination_post_idx_pt_id ON weight_sampling_100_destination_post USING btree(pt_id);
+CREATE INDEX weight_sampling_100_destination_post_idx_net_id ON weight_sampling_100_destination_post USING btree(net_id);
+CREATE INDEX weight_sampling_100_destination_post_idx_the_geom ON weight_sampling_100_destination_post USING gist(the_geom);
+---- Indexes on origin
+CREATE INDEX weight_sampling_100_origin_post_idx_pt_id ON weight_sampling_100_origin_post USING btree(pt_id);
+CREATE INDEX weight_sampling_100_origin_post_idx_net_id ON weight_sampling_100_origin_post USING btree(net_id);
+CREATE INDEX weight_sampling_100_origin_post_idx_the_geom ON weight_sampling_100_origin_post USING gist(the_geom);
+---- Index on the new network
+CREATE INDEX prueba_largest_network_post_idx_GEOM ON prueba_largest_network_post USING gist(the_geom);
+CREATE INDEX prueba_largest_network_post_idx_id ON prueba_largest_network_post USING btree(id);
+CREATE INDEX prueba_largest_network_post_idx_target ON prueba_largest_network_post USING btree(target);
+CREATE INDEX prueba_largest_network_post_idx_source ON prueba_largest_network_post USING btree(source);
+CREATE INDEX prueba_largest_network_post_idx_cost ON prueba_largest_network_post USING btree(cost);
+---- Cluster
+CLUSTER prueba_largest_network_post USING prueba_largest_network_post_idx_GEOM;
+---- Vacuum clean
+VACUUM(full, ANALYZE) weight_sampling_100_origin;
+VACUUM(full, ANALYZE) weight_sampling_100_destination;
+VACUUM(full, ANALYZE) porto_alegre_net_largest;    
+
+```
+
 
 ## Centrality Analysis
 
