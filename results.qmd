@@ -6,10 +6,9 @@
 #| warning: false
 
 # Load packages
-lapply(c("tidyverse","DT","leaflet","sf","DBI", "RPostgres","dplyr", "mapview","leafpop","leaflet","terra","raster","stars", "lwgeom"),
+lapply(c("tidyverse","DT","leaflet","sf","DBI", "RPostgres","dplyr", "mapview","leafpop","leaflet","terra","raster","stars", "lwgeom","leaflet.extras2","RColorBrewer","tidygeocoder"),
        require,
        character.only =T)
-
 # Connect to the server
 eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
                           user= "docker",
@@ -17,6 +16,11 @@ eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
                           host = "localhost",
                           dbname="gis",
                           port = 25432)
+
+## Import data
+centrality_pre <- st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
+centrality_post <- st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned_post")
+flooding <- sf::st_read("~/heigit_bookdown/data/flooding_porto.geojson") 
 ```
 
 ## Data preparation
@@ -69,17 +73,6 @@ m2 <- mapview(intersection_ors,
 sync(m1,m2) 
 ```
 
-
-```{sql}
-#| connection: eisenberg_connection
-#| eval: false
-
-mapview::mapview(top_5_network,
-                zcol="component",
-                lwd=.5,
-                popup=popupTable(top_5_network,
-                                 zcol=c("component","distance")))
-```
 
 ### Sampling points
 
@@ -335,8 +328,198 @@ subset_post_scenario_bbox AS bbox;
 connectivity metrics?
 
 ```{r}
-centrality_pre <- st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
+#| eval: false
+
+### naural breaks
+#### For pre-event: 1644, 468, 142
+centrality_pre$centrality_fct <- cut(centrality_pre$centrality,
+                  breaks=c(0,142,468,1644),
+                  labels =c("low","medium","high"),
+                  include.lowest= TRUE,
+                  right =FALSE)
+#### natural perk:  81, 230, 582
+centrality_post$centrality_fct <- cut(centrality_post$centrality,
+                  breaks=c(0,81,230,582),
+                  labels =c("low","medium","high"),
+                  include.lowest= TRUE,
+                  right =FALSE)
+### 
+centrality_pre_map <- mapview::mapview(centrality_pre,
+                                       zcol="centrality_fct",
+                                        lwd ="centrality",
+                                       layer.name ="Centrality Pre-Event",
+              popup=popupTable(centrality_pre, 
+                               zcol=c("id","centrality","bidirectid"))) 
+centrality_post_map <- mapview::mapview(centrality_post,
+                                       zcol="centrality_fct",
+                                        lwd = "centrality",
+                                       layer.name ="Centrality Post-Event",
+              popup=popupTable(centrality_pre, 
+                               zcol=c("id","centrality","bidirectid"))) 
+
+centrality_pre_map | centrality_post_map + mapview(flooding,
+          color="darkblue",
+          alpha.regions= 0.5,
+          layer.name="Flooding layer")
+
 ```
+
+```{=html}
+
+<iframe width="760" height="500" src="/media/centrality_map_results.html" title = "Sum Edge Betweenness in the Urban Settlement located in Porto Alegre "></iframe>
+
+```
+
+Meter tabla que incluye georefernciar
+
+```{r}
+#| message: false
+#| warning: false
+#| eval: false
+
+
+library(plyr)
+## Categories for pre-flooding or post-flooding
+df_centrality_pre <- centrality_pre |> sf::st_drop_geometry() |>   mutate(event = "pre-flooding") 
+df_centrality_post <- centrality_post |> sf::st_drop_geometry() |>   mutate(event = "post-flooding")
+
+#### For pre-event: 1644, 468, 142
+df_centrality_pre$centrality_fct <- cut(df_centrality_pre$centrality,
+                  breaks=c(0,142,468,1644),
+                  labels =c("low","medium","high"),
+                  include.lowest= TRUE,
+                  right =FALSE)
+#### natural perk:  81, 230, 582
+df_centrality_post$centrality_fct <- cut(df_centrality_post$centrality,
+                  breaks=c(0,81,230,582),
+                  labels =c("low","medium","high"),
+                  include.lowest= TRUE,
+                  right =FALSE)
+## Join both in one dataframe
+df_centrality_both <- left_join(df_centrality_pre,
+                    df_centrality_post,
+                    by = 'id',
+                    suffix=c("_pre","_post")) |>    dplyr::select(c("id","bidirectid_pre","bidirectid_post","centrality_pre","centrality_post","centrality_fct_pre","centrality_fct_post","event_post","event_pre")) |>
+  mutate(centrality_post = replace_na(centrality_post, 0)) ## Roads covered by the flooding appeared as NA in the post-scenario, replace tha NA value for 0
+
+## Calculate change on centrality after being impacted by flooding 
+df_centrality_both <-  df_centrality_both |>
+            mutate(centrality_diff = centrality_post-centrality_pre)
+### Obtain distribution using quantiles
+df_centrality_both_quantiles <- quantile(df_centrality_both$centrality_diff, na.rm =TRUE)
+### Filter the worst scenario, most negative values below second quartile
+df_centrality_negative_outlier <- df_centrality_both |>
+                        filter( centrality_diff <= df_centrality_both_quantiles[2])
+### Join with original data to obtain again geometry
+df_centrality_negative_outlier_geom <- df_centrality_negative_outlier |>
+                        arrange(centrality_diff) |>
+                        slice(1:1000) |>
+                        left_join(centrality_pre, by = "id") |>
+                    mutate(the_geom_centroid = st_centroid(the_geom),
+                           lon = st_coordinates(the_geom_centroid)[,1],
+                           lat = st_coordinates(the_geom_centroid)[,2])
+# Obtain a subset of the 500 observations oredered by lowest values on centrality difference
+df_centrality_negative_outlier_geom_unique <- df_centrality_negative_outlier_geom |> 
+  distinct(centrality_pre, .keep_all = TRUE) 
+# Reverse geocoding to obtain the address based on the centroids
+df_centrality_negative_outlier_distinct_address <-  tidygeocoder::reverse_geocode(df_centrality_negative_outlier_geom_unique, lat=lat, lon=lon, method="osm")
+## Create ID for the found addresses (97)
+df_centrality_negative_outlier_distinct_address$address_number <- seq(1, 167,1)
+
+df_centrality_negative_outlier_distinct_address$short_address <- str_extract(df_centrality_negative_outlier_distinct_address$address, "^[^,]+, [^,]+") 
+df_centrality_negative_outlier_distinct_address$centrality_diff_perc <- round(((df_centrality_negative_outlier_distinct_address$centrality_post - df_centrality_negative_outlier_distinct_address$centrality_pre) / df_centrality_negative_outlier_distinct_address$centrality_pre *100),2)
+  
+## DT Table
+DT::datatable(subset(df_centrality_negative_outlier_distinct_address, select=c("address_number", "short_address","centrality_pre", "centrality_post","centrality_diff","centrality_diff_perc","id","source","target","the_geom")), 
+              colnames= c("ID","Address","Pre-Centrality", "Post-Centrality","Diff-Centrality","Diff-Centrality(%)","id_1","source","target","the_geom"),
+              filter="top",
+              class='compact', rownames=FALSE, escape=FALSE, caption='Data description',
+              extensions=c("Buttons",'RowGroup'),
+              options=list(
+                  order=list(list(5, 'desc'), list(2,'desc')),  # Sort by the first column (index 5)
+                  dom="Bfrtip",
+                  columnDefs = list(list(visible=FALSE, targets= c(6,7,8,9))),
+                  buttons=c("copy", "csv", "pdf"),
+                  initComplete = JS(
+                      "function(settings, json) {",
+                      "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+                      "}")
+              )
+) |> 
+      DT::formatStyle("centrality_pre",
+     background=DT::styleColorBar(range(df_centrality_negative_outlier_distinct_address$centrality_pre), '#ee8b8b'),
+                    backgroundSize='98% 88%',
+                    backgroundRepeat='no-repeat',
+                    backgroundPosition='center') 
+```
+
+
+```{=html}
+
+<iframe width="760" height="500" src="/media/centrality_table_results.html" title = "Sum Edge Betweenness in the Urban Settlement located in Porto Alegre "></iframe>
+
+```
+Meter gráfica
+
+```{r}
+
+library(plyr)
+# Tidy data and wrangling
+centrality_post$event <- "post-flooding"
+centrality_pre$event <- "pre-flooding"  
+centrality_both <- rbind(centrality_post[,c("id","centrality","event")] ,
+                                   centrality_pre[,c("id","centrality","event")])
+mu <- plyr::ddply(centrality_both, "event", summarise, grp.mean=mean(centrality))
+
+# Create histogram
+ggplot(centrality_both, aes(x=centrality, fill=event)) +
+                    geom_histogram(alpha=0.4,) + scale_x_log10() +
+                  labs(title = "Centrality analysis",
+                      subtitle= "Histogram on log10 scale",
+                      x = " Betweenness centrality (centrality)",
+                      y = "Frequency (count)") +
+  theme(plot.title=element_text(family ="bold", hjust=0.5),
+        plot.subtitle = element_text(colour="#626262", hjust=0.5),
+        legend.position='bottom')
+```
+
+
+```{r}
+#| eval: false
+
+df_centrality_both <- na.omit(df_centrality_both) |> 
+  mutate(centrality_cat=as.factor(case_when(
+    centrality <= q_pre[2] ~ "Q1",
+    centrality <= q_pre[3] ~ "Q2",
+    centrality <= q_pre[4] ~ "Q3",
+    centrality >= q_pre[4] ~ "Q4",
+    TRUE ~ "missing")))  
+library(dplyr)
+
+df <- df_centrality_both %>%
+  mutate(centrality_fct = coalesce(centrality_fct_post, centrality_fct_pre),
+         event_fct = coalesce(event_post, event_pre))
+
+
+barplot_event_cat_sum <- df |> 
+                          st_drop_geometry()  |>
+                          group_by(event_fct, centrality_fct) |>
+                           summarise(sum_centrality = sum(centrality))
+
+ggplot(df_centrality_both, aes(x=centrality, fill=event)) +
+                    geom_histogram(alpha=0.4,) + scale_x_log10() +
+                  labs(title = "Centrality analysis",
+                      subtitle= "Histogram on log10 scale",
+                      x = " Betweenness centrality (centrality)",
+                      y = "Frequency (count)") +
+  theme(plot.title=element_text(family ="bold", hjust=0.5),
+        plot.subtitle = element_text(colour="#626262", hjust=0.5),
+        legend.position='bottom')
+```
+
+
+
+
 
 
 ### Performance

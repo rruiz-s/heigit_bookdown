@@ -183,15 +183,6 @@ ORDER BY length DESC;
 
 ```
 
-
-```{r}
-#|eval: false
-
-dist_post <-st_read(eisenberg_connection, "post_component_analyze")
-
-
-```
-
 The largest length selected the network component of the study. The following code created this table ruling out the rest of the relatively small networks.
 
 ```{sql}
@@ -718,7 +709,7 @@ CREATE INDEX prueba_largest_network_post_idx_id ON prueba_largest_network_post U
 CREATE INDEX prueba_largest_network_post_idx_target ON prueba_largest_network_post USING btree(target);
 CREATE INDEX prueba_largest_network_post_idx_source ON prueba_largest_network_post USING btree(source);
 CREATE INDEX prueba_largest_network_post_idx_cost ON prueba_largest_network_post USING btree(cost);
----- Cluster
+---- Cluster 
 CLUSTER prueba_largest_network_post USING prueba_largest_network_post_idx_GEOM;
 ---- Vacuum clean
 VACUUM(full, ANALYZE) weight_sampling_100_origin;
@@ -1103,7 +1094,7 @@ on
 --- Post scenario
 
 ----routing
- CREATE TABLE centrality_1000_1000_dijkstra_post AS
+ CREATE TABLE centrality_100_100_dijkstra_post AS
  SELECT   b.id,
  b.the_geom,
  count(the_geom) as centrality 
@@ -1111,50 +1102,50 @@ on
                              source,
                             target,
                             cost
-                      FROM porto_alegre_street_united',
-                      ARRAY(SELECT net_id AS start_id FROM weight_sampling_1000_origin  ),
-                      ARRAY(SELECT net_id AS end_id FROM weight_sampling_1000_destination ),
+                      FROM prueba_largest_network_post',
+                      ARRAY(SELECT net_id AS start_id FROM weight_sampling_100_origin_post  ),
+                      ARRAY(SELECT net_id AS end_id FROM weight_sampling_100_destination_post ),
                       directed := TRUE) j
-                      left JOIN porto_alegre_street_united AS b
+                      left JOIN prueba_largest_network_post AS b
                       ON j.edge = b.id
                       GROUP BY  b.id, b.the_geom
                       ORDER BY centrality DESC;  
 ---- Adding the bidirectid by joining the dijkstra table with the original
-CREATE TABLE centrality_weighted_1000_bidirect_post AS
+CREATE TABLE centrality_weighted_100_bidirect_post AS
 SELECT t1.*,
     t2."bidirectid"
 FROM
-    centrality_1000_1000_dijkstra_post t1
+    centrality_100_100_dijkstra_post t1
 JOIN
-    porto_alegre_street_united t2
+    prueba_largest_network_post t2
 ON
     t1.id = t2.id;
---- The final product requries  79941
-select max("bidirectid") from centrality_weighted_1000_bidirect_post; ---62347
-create sequence bididirect_id_weight_post start 62347;
-update centrality_weighted_1000_bidirect_post
+--- The final product requries  79918
+select max("bidirectid") from centrality_weighted_100_bidirect_post; ---79918
+create sequence bididirect_id_weight_post start 79918;
+update centrality_weighted_100_bidirect_post
 set "bidirectid" = nextval('bididirect_id_weight_post')
 where "bidirectid" is null ;
    ---- verify
 select count(*) 
-from centrality_weighted_1000_bidirect_post 
+from centrality_weighted_100_bidirect_post 
 where "bidirectid" is null; --- 0              
 ----
-create table centrality_weighted_1000_bidirect_group_post as 
+create table centrality_weighted_100_bidirect_group_post as 
 select 
        "bidirectid",
        sum(centrality) as  centrality
-from centrality_weighted_1000_bidirect_post
+from centrality_weighted_100_bidirect_post
 group by "bidirectid"; --- this sum the centrality for duplicated bidirect id
 ---        
 ---- now recover the id
-create table centrality_weighted_1000_bidirect_group_post_id as 
+create table centrality_weighted_100_bidirect_group_post_id as 
 select t1.*, t2.id
-from centrality_weighted_1000_bidirect_group_post t1
-join centrality_weighted_1000_bidirect_post t2 
+from centrality_weighted_100_bidirect_group_post t1
+join centrality_weighted_100_bidirect_post t2 
 on t1."bidirectid" = t2."bidirectid"; 
 ---- add geometries
-create table centrality_weighted_1000_bidirect_cleaned_post as
+create table centrality_weighted_100_bidirect_cleaned_post as
 select t1.*,
     t2.the_geom,
     t2.target,
@@ -1162,11 +1153,11 @@ select t1.*,
     t2.cost,
     t2."unidirectid"
 from 
-    centrality_weighted_1000_bidirect_group_post_id t1
+    centrality_weighted_100_bidirect_group_post_id t1
 join
-    porto_alegre_street_united t2
+    prueba_largest_network_post t2
 on
-    t1.id = t2.id;
+    t1.id = t2.id;       
 
 ```
 
