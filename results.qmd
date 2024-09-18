@@ -6,7 +6,7 @@
 #| warning: false
 
 # Load packages
-lapply(c("tidyverse","DT","leaflet","sf","DBI", "RPostgres","dplyr", "mapview","leafpop","leaflet","terra","raster","stars", "lwgeom","leaflet.extras2","RColorBrewer","tidygeocoder"),
+lapply(c("tidyverse","DT","leaflet","sf","DBI", "RPostgres","dplyr", "mapview","leafpop","leaflet","leafsync","terra","raster","stars", "lwgeom","leaflet.extras2","RColorBrewer","tidygeocoder"),
        require,
        character.only =T)
 # Connect to the server
@@ -35,15 +35,14 @@ osmium extract -b -51.2791,-30.1722,-50.9407,-29.8048 sul-240501.osm.pbf -o puer
 ```
 
 ![](/media/bbox_porto_alegre_ghs.png){fig-align="center" width="50%"}
+
 Importing the geometries from R from Marcel
 
 ```{r}
-#| eval: false
 #| warning: false
 #| message: false
 
-
-# Load data
+## Load data
 ors_network <- st_read(eisenberg_connection, layer="porto_alegre_net_pre")
 osm_network <- st_read(eisenberg_connection, layer="puerto_alegre_ghs_osm")
 ors_network_subset <- ors_network |> head()
@@ -72,20 +71,19 @@ m2 <- mapview(intersection_ors,
               color ="#d50038",
               layer.name="OpenRouteService -Graph",
               popup=popupTable(intersection_ors))
-
 sync(m1,m2) 
 ```
 
 
-### Sampling points
+### Point of Interest: Sampling points
 
 ```{r}
 #| message: false
 #| warning: false
 
-# Crop and Reproject
-# gdalwarp -te -4850853.201784615 -3737074.296348413 -4616291.881935796 -3495378.804761388 GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0.tif GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V
-# gdalwarp -t_srs "EPSG:4326" GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0_RioGrandeDoSul.tif GHS_BUILT_V_E2020_GLOBE_R2023A_4326_100_V1_0_RioGrandeDoSul.tif
+## Crop and Reproject
+## gdalwarp -te -4850853.201784615 -3737074.296348413 -4616291.881935796 -3495378.804761388 GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0.tif GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V
+## gdalwarp -t_srs "EPSG:4326" GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0_RioGrandeDoSul.tif GHS_BUILT_V_E2020_GLOBE_R2023A_4326_100_V1_0_RioGrandeDoSul.tif
 pal <- mapview::mapviewPalette("mapviewTopoColors")
 ghs_build <- stack("/home/ricardo/heigit_bookdown/data/GHS_BUILT_V_E2020_GLOBE_R2023A_4326_100_V1_0_RioGrandeDoSul.tif") 
 ghs_smod <- stack("/home/ricardo/heigit_bookdown/data/GHS_SMOD_E2020_GLOBE_R2023A_4326_1000_V2_0_RioGrandeDoSul.tif")
@@ -93,14 +91,14 @@ ghs_smod_terra <- terra::rast("/home/ricardo/heigit_bookdown/data/GHS_SMOD_E2020
 regular_sampling <- st_read("/home/ricardo/heigit_bookdown/data/random_points_snapped.geojson")
 weighted_sampling_origin <- st_read(eisenberg_connection,"weight_sampling_100_origin")
 weighted_sampling_destination <- st_read(eisenberg_connection,"weight_sampling_100_destination")
+poi_hospital <- st_read(eisenberg_connection,"hospital_rs_node_v2")
 m <- matrix(c(
      0, 10, NA,   # Values >= 0 and <= 10 become 0
      10, 13, 1,  # Values > 10 and <= 21 become 1
      13, 29, 2,  # Values > 21 and <= 29 become 2
      30, 30, 3   # Values == 30 become 3
  ), ncol = 3, byrow = TRUE)
- 
-# Classify using the correct matrix
+## Classify using the correct matrix
 rc2 <- classify(ghs_smod_terra, m, include.lowest=TRUE)
 rc2_factor <- as.factor(rc2)
 levels(rc2_factor) <- data.frame(
@@ -108,17 +106,41 @@ levels(rc2_factor) <- data.frame(
   category = c("Rural: 10-13", "Suburban: 13-29", "Urban Center: 30")
 )
 category_colors <- c("#008f44","#dedb96", "#cc9152")
-# mapview(rc2_factor, 
-#        na.color="transparent",
-#        col.regions = category_colors,  # Apply colors to categories
-#        legend = TRUE,                  # Show legend
-#        layer.name = "Settlement Typologies")
-
-mapview(ghs_build[[1]],layer.name ="Built-up volume", col.regions = pal(100), legend = TRUE, alpha.regions= 0.35, hide=FALSE) +
-mapview(ghs_smod[[1]], layer.name = "Settlement classification", col.regions = pal(100), legend = TRUE, alpha.regions= 0.35, hide=TRUE) +
-mapview(weighted_sampling_origin, layer.name="" ,color="blue",col.regions = "blue", hide=FALSE) +
-mapview(weighted_sampling_destination, color="red",col.regions = "red", hide=FALSE)  +
-mapview(regular_sampling, color = "darkgray", col.regions="darkgray", hide=TRUE) 
+mapview(ghs_build[[1]],
+        layer.name ="Built-up volume",
+        col.regions = pal(100),
+        legend = TRUE,
+        alpha.regions= 0.35,
+        hide=TRUE) +
+mapview(ghs_smod[[1]],
+        layer.name = "Settlement classification",
+        col.regions = pal(100),
+        legend = TRUE,
+        alpha.regions= 0.35,
+        hide=TRUE) +
+mapview(weighted_sampling_origin,
+        layer.name="Origin samples",
+        color="blue",
+        col.regions = "blue",
+        hide=TRUE) +
+mapview(weighted_sampling_destination,
+        color="darkblue",
+        layer.name="Destination samples",
+        col.regions = "darkblue",
+        hide=TRUE)  +
+mapview(regular_sampling,
+        color = "darkgray",
+        col.regions="darkgray",
+        hide=TRUE) +
+mapview(subset(poi_hospital,
+               select=c("cd_cnes",
+                        "ds_cnes",
+                        "id",
+                        "geom_hospital")),
+                layer.name = "POI - Hospitals",
+                color= "darkred",
+        col.regions="red",
+               popup=popupTable(poi_hospital, zcol=c("cd_cnes","ds_cnes","id")))
 
 ```
 
@@ -130,6 +152,23 @@ mapview(regular_sampling, color = "darkgray", col.regions="darkgray", hide=TRUE)
 #| eval: false
 #| warning: false
 #| message: false
+
+
+---- Generate the subset to be visualize
+
+CREATE TABLE porto_alegre_net_largest_subset AS                  
+SELECT
+  st_intersection(net.the_geom, bbox.geom) 
+FROM 
+  porto_alegre_net_largest AS net
+WHERE 
+porto_alegre_net_largest.the_geom && subset_post_scenario_bbox; 
+---- Generate the subset
+
+CREATE TABLE subset_post_scenario_bbox AS
+SELECT st_setsrid(
+            st_makeenvelope(
+              -51.214287,-30.020226,-51.12934,-29.945862),4326) AS geom;
 
 --- pre_net_subset
 CREATE TABLE porto_alegre_net_largest_subset AS                  
@@ -285,50 +324,6 @@ FROM difference_outside_flood_v4;
 ```
 
 
-```{sql}
-#| connection: eisenberg_connection
-#| eval: false
-
-
-CREATE TABLE subset_post_scenario_bbox AS
-SELECT st_setsrid(
-            st_makeenvelope(
-              -51.214287,-30.020226,-51.12934,-29.945862),4326) AS geom;
-
-```
-
-
-```{sql}
-#| connection: eisenberg_connection
-#| eval: false
-
-
----- Generate the subset to be visualize
-
-CREATE TABLE porto_alegre_net_largest_subset AS                  
-SELECT
-  st_intersection(net.the_geom, bbox.geom) 
-FROM 
-  porto_alegre_net_largest AS net
-WHERE 
-porto_alegre_net_largest.the_geom && subset_post_scenario_bbox; 
-```
-
-
-```{sql}
-#| connection: eisenberg_connection
-#| eval: false
-
-SELECT
-  st_intersection(net.the_geom, bbox.geom)
-FROM 
-  porto_alegre_net_largest AS net,
-subset_post_scenario_bbox AS bbox;
-
-```
-
-
-
 ## RQ1: Centrality analysis
 
 >How does road connectivity change after being impacted by flooding based on
@@ -337,14 +332,14 @@ connectivity metrics?
 ```{r}
 #| eval: false
 
-### naural breaks
+### natural breaks
 #### For pre-event: 1644, 468, 142
 centrality_pre$centrality_fct <- cut(centrality_pre$centrality,
                   breaks=c(0,142,468,1644),
                   labels =c("low","medium","high"),
                   include.lowest= TRUE,
                   right =FALSE)
-#### natural perk:  81, 230, 582
+#### natural breaks:  81, 230, 582
 centrality_post$centrality_fct <- cut(centrality_post$centrality,
                   breaks=c(0,81,230,582),
                   labels =c("low","medium","high"),
@@ -387,8 +382,12 @@ Meter tabla que incluye georefernciar
 
 library(plyr)
 ## Categories for pre-flooding or post-flooding
-df_centrality_pre <- centrality_pre |> sf::st_drop_geometry() |>   mutate(event = "pre-flooding") 
-df_centrality_post <- centrality_post |> sf::st_drop_geometry() |>   mutate(event = "post-flooding")
+df_centrality_pre <- centrality_pre |>
+                      sf::st_drop_geometry() |>
+                      mutate(event = "pre-flooding") 
+df_centrality_post <- centrality_post |>
+                        sf::st_drop_geometry() |>
+                    mutate(event = "post-flooding")
 
 #### For pre-event: 1644, 468, 142
 df_centrality_pre$centrality_fct <- cut(df_centrality_pre$centrality,
@@ -494,23 +493,10 @@ ggplot(centrality_both, aes(x=centrality, fill=event)) +
 
 
 ```{r}
-#| eval: false
-
-ggplot(df_centrality_both, aes(x=centrality, fill=event)) +
-                    geom_histogram(alpha=0.4,) + scale_x_log10() +
-                  labs(title = "Centrality analysis",
-                      subtitle= "Histogram on log10 scale",
-                      x = " Betweenness centrality (centrality)",
-                      y = "Frequency (count)") +
-  theme(plot.title=element_text(family ="bold", hjust=0.5),
-        plot.subtitle = element_text(colour="#626262", hjust=0.5),
-        legend.position='bottom')
-```
-
-
-
-```{r}
 ## Import
+#| warming: false
+#| message: false
+
 df_centrality_pre <- centrality_pre |>
                         sf::st_drop_geometry() |>
                         mutate(event = "pre-flooding") 
@@ -559,6 +545,7 @@ barplot_event_cat_sum <- df_centrality_both_barplot_cat |>
 #| warning: false
 #| message: false
 #| eval: false
+#| echo: false
 
 df_centrality_both_pareto_cat <- na.omit(
   df_centrality_both_barplot) |> 
@@ -617,76 +604,15 @@ axis(side = 4, at = c(0, px), labels = paste(c(0, round(d$cum_freq * 100)) ,"%",
 par(def_par) 
 ```
 
-### Performance
 
-```{r}
-library(readODS)
-library(ggplot2)
-performance <- readODS::read_ods("metrics.ods")
-df <- performance |> dplyr::select(c("number_od","method","algorithm","time","max_centrality","count_rows","query","analyze")) |> filter(!is.na(time) & method=='naive')
 
-ggplot(df,aes(x=number_od, y=time, group = algorithm)) +
-  geom_line(aes(color=algorithm)) +
-   geom_point(aes(color=algorithm))
+## RQ2:  Accessibility analysis
 
-DT::datatable(subset(df, select=c("number_od","algorithm","time","query","analyze")), 
-              class='compact', rownames=FALSE, escape=FALSE, caption='Data description',
-              extensions=c("Buttons",'RowGroup'),
-              options=list(
-                  order=list(list(0, 'asc'), list(2,'asc')),  # Sort by the first column (index 0)
-                  rowGroup=list(dataSrc=0),    # Fixed rowGroup
-                  dom="Bfrtip",
-                  columnDefs = list(list(visible=FALSE, targets= c(3,4))),
-                  buttons=c("copy", "csv", "pdf"),
-                  initComplete = JS(
-                      "function(settings, json) {",
-                      "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
-                      "}")
-              )
-) |> 
-    DT::formatStyle("time",
-                    background=DT::styleColorBar(range(df$time), '#ee8b8b'),
-                    backgroundSize='98% 88%',
-                    backgroundRepeat='no-repeat',
-                    backgroundPosition='center')
-```
+> Which healthcare facilities will be most affected by flooding based on accessibility
+metrics?
 
 
 ### Closeness
-
-
-```{r}
-closseness <-sf::st_read(eisenberg_connection, 
-                            layer = "clossness_hospital_porto")
-closseness_no_geom <- closseness |>  
-                          arrange(ds_cnes, closeness) |>
-                          mutate(lng= 
-                              unlist(map(geom_hospital,1)),
-                           lat=
-                              unlist(map(geom_hospital,2)),
-                           closeness_norm = 
-                          (closseness$closeness - min(closseness$closeness)) / (max(closseness$closeness) - min(closseness$closeness)) * 100,
-                          position = rank(-closeness),
-                          ds_cnes =stringr::str_to_title(ds_cnes)) |>
-                  sf::st_drop_geometry()
-
-DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes","closeness")),
-              extensions="Buttons",
-                         options=list(
-                           dom="Bfrtip",
-                           buttons=c("copy","csv","pdf"),
-                            initComplete = JS(
-    "function(settings, json) {",
-    "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
-    "}")
-                                  )
-              ) |> 
-    DT::formatStyle("closeness",
-              background=DT::styleColorBar(range(closseness_no_geom$closeness),'#ee8b8b'),
-                backgroundSize = '98% 88%',
-  backgroundRepeat = 'no-repeat',
-  backgroundPosition = 'center') 
-```
 
 
 ```{r}
@@ -727,11 +653,38 @@ leaflet(closseness_df) |>
 
 ```
 
-## RQ2:  Accessibility analysis
+```{r}
+closseness <-sf::st_read(eisenberg_connection, 
+                            layer = "clossness_hospital_porto")
+closseness_no_geom <- closseness |>  
+                          arrange(ds_cnes, closeness) |>
+                          mutate(lng= 
+                              unlist(map(geom_hospital,1)),
+                           lat=
+                              unlist(map(geom_hospital,2)),
+                           closeness_norm = 
+                          (closseness$closeness - min(closseness$closeness)) / (max(closseness$closeness) - min(closseness$closeness)) * 100,
+                          position = rank(-closeness),
+                          ds_cnes =stringr::str_to_title(ds_cnes)) |>
+                  sf::st_drop_geometry()
 
-> Which healthcare facilities will be most affected by flooding based on accessibility
-metrics?
-
+DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes","closeness")),
+              extensions="Buttons",
+                         options=list(
+                           dom="Bfrtip",
+                           buttons=c("copy","csv","pdf"),
+                            initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+    "}")
+                                  )
+              ) |> 
+    DT::formatStyle("closeness",
+              background=DT::styleColorBar(range(closseness_no_geom$closeness),'#ee8b8b'),
+                backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') 
+```
 
 
 ## RQ3: Critical infrastructures
