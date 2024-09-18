@@ -39,6 +39,9 @@ Importing the geometries from R from Marcel
 
 ```{r}
 #| eval: false
+#| warning: false
+#| message: false
+
 
 # Load data
 ors_network <- st_read(eisenberg_connection, layer="porto_alegre_net_pre")
@@ -77,6 +80,8 @@ sync(m1,m2)
 ### Sampling points
 
 ```{r}
+#| message: false
+#| warning: false
 
 # Crop and Reproject
 # gdalwarp -te -4850853.201784615 -3737074.296348413 -4616291.881935796 -3495378.804761388 GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0.tif GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V
@@ -123,6 +128,8 @@ mapview(regular_sampling, color = "darkgray", col.regions="darkgray", hide=TRUE)
 ```{sql}
 #| connection: eisenberg_connection
 #| eval: false
+#| warning: false
+#| message: false
 
 --- pre_net_subset
 CREATE TABLE porto_alegre_net_largest_subset AS                  
@@ -462,6 +469,8 @@ DT::datatable(subset(df_centrality_negative_outlier_distinct_address, select=c("
 Meter gráfica
 
 ```{r}
+#| warming: false
+#| message: false
 
 library(plyr)
 # Tidy data and wrangling
@@ -487,25 +496,6 @@ ggplot(centrality_both, aes(x=centrality, fill=event)) +
 ```{r}
 #| eval: false
 
-df_centrality_both <- na.omit(df_centrality_both) |> 
-  mutate(centrality_cat=as.factor(case_when(
-    centrality <= q_pre[2] ~ "Q1",
-    centrality <= q_pre[3] ~ "Q2",
-    centrality <= q_pre[4] ~ "Q3",
-    centrality >= q_pre[4] ~ "Q4",
-    TRUE ~ "missing")))  
-library(dplyr)
-
-df <- df_centrality_both %>%
-  mutate(centrality_fct = coalesce(centrality_fct_post, centrality_fct_pre),
-         event_fct = coalesce(event_post, event_pre))
-
-
-barplot_event_cat_sum <- df |> 
-                          st_drop_geometry()  |>
-                          group_by(event_fct, centrality_fct) |>
-                           summarise(sum_centrality = sum(centrality))
-
 ggplot(df_centrality_both, aes(x=centrality, fill=event)) +
                     geom_histogram(alpha=0.4,) + scale_x_log10() +
                   labs(title = "Centrality analysis",
@@ -519,8 +509,113 @@ ggplot(df_centrality_both, aes(x=centrality, fill=event)) +
 
 
 
+```{r}
+## Import
+df_centrality_pre <- centrality_pre |>
+                        sf::st_drop_geometry() |>
+                        mutate(event = "pre-flooding") 
+df_centrality_post <- centrality_post |> 
+                          sf::st_drop_geometry() |>
+                              mutate(event = "post-flooding")
+##
+df_centrality_both_barplot <- dplyr::bind_rows(df_centrality_pre,
+                                               df_centrality_post)
+### percentiles
+q <- quantile(df_centrality_both_barplot$centrality)
+q_pre <- quantile(
+  df_centrality_pre[df_centrality_pre$event == 'pre-flooding',]$centrality)
+q_post <- quantile(
+  df_centrality_post[df_centrality_post$event == 'post-flooding',]$centrality)
+### Centrality
+df_centrality_both_barplot_cat <- na.omit(df_centrality_both_barplot) |> 
+  mutate(centrality_cat=as.factor(case_when(
+    centrality <= q_pre[2] ~ "Q1",
+    centrality <= q_pre[3] ~ "Q2",
+    centrality <= q_pre[4] ~ "Q3",
+    centrality >= q_pre[4] ~ "Q4",
+    TRUE ~ "missing")))  
+## tidy data
+barplot_event_cat_sum <- df_centrality_both_barplot_cat |> 
+                          dplyr::group_by(event, centrality_cat) |>
+                           dplyr::summarise(sum_centrality = sum(centrality))
+#basic plot
+ barplot_event_cat_sum |>  
+  ggplot(aes(x=centrality_cat,
+              y=sum_centrality,
+              fill=event)) +
+  geom_col(width=0.5, position="dodge") +
+  labs(title = "Centrality analysis",
+       subtitle= "Barplot grouped by the post and pre event",
+       x = " Quantiles",
+       y = "Sum of edge betweenness") +
+  theme(plot.title=element_text(family ="bold", hjust=0.5),
+        plot.subtitle = element_text(colour="#626262", hjust=0.5),
+        legend.position='bottom')
+
+```
 
 
+```{r}
+#| warning: false
+#| message: false
+#| eval: false
+
+df_centrality_both_pareto_cat <- na.omit(
+  df_centrality_both_barplot) |> 
+  mutate(centrality_cat=as.factor(
+      case_when(
+    centrality <= quantile(
+        df_centrality_pre[df_centrality_pre$event == 'pre-flooding',]$centrality, .20) ~ "20%",
+    centrality <= quantile(
+        df_centrality_pre[df_centrality_pre$event == 'pre-flooding',]$centrality, .40) ~ "40%",
+    centrality <= quantile(
+        df_centrality_pre[df_centrality_pre$event == 'pre-flooding',]$centrality, .60) ~ "60%",
+    centrality <= quantile(
+        df_centrality_pre[df_centrality_pre$event == 'pre-flooding',]$centrality, .80) ~ "80%",
+    centrality >= quantile(
+        df_centrality_pre[df_centrality_pre$event == 'pre-flooding',]$centrality, .80) ~ "99%",
+    TRUE ~ "missing")))  
+
+d <- df_centrality_both_pareto_cat |>
+            st_drop_geometry() |>
+            filter(event=="pre-flooding") |>
+            dplyr::group_by(centrality_cat) |> dplyr::summarise(centrality_sum=sum(centrality)) |> 
+  arrange(desc(centrality_sum)) |>
+  mutate(cumsum=cumsum(centrality_sum),
+         freq=round(centrality_sum/sum(centrality_sum),3),
+         cum_freq=cumsum(freq))
+## Saving Parameters 
+
+def_par <- par() 
+
+# New margins
+par(mar=c(5,5,4,5)) 
+
+## plot bars, pc will hold x values for bars
+pc = barplot(d$centrality_sum,
+             width = 1, space = 0.2, border = NA, axes = F,
+             ylim = c(0, 1.05 * max(d$centrality_sum, na.rm = T)), 
+             ylab = "Counts" , cex.names = 0.7, 
+             names.arg = d$centrality_cat,
+             main = "Pareto Chart")
+
+## anotate left axis
+axis(side = 2, at = c(0, d$centrality_sum), las = 1, col.axis = "grey62", col = "grey62", tick = T, cex.axis = 0.8)
+
+## frame plot
+box( col = "grey62")
+
+## Cumulative Frequency Lines 
+px <- d$cum_freq * max(d$centrality_sum, na.rm = T)
+lines(pc, px, type = "b", cex = 0.7, pch = 19, col="#d50038")
+
+## Annotate Right Axis
+axis(side = 4, at = c(0, px), labels = paste(c(0, round(d$cum_freq * 100)) ,"%",sep=""), 
+     las = 1, col.axis = "grey62", col = "#d50038", cex.axis = 0.8, col.axis = "#d50038")
+
+## restoring default paramenter
+par(def_par) 
+```
 
 ### Performance
 
@@ -556,7 +651,9 @@ DT::datatable(subset(df, select=c("number_od","algorithm","time","query","analyz
                     backgroundPosition='center')
 ```
 
+
 ### Closeness
+
 
 ```{r}
 closseness <-sf::st_read(eisenberg_connection, 
@@ -634,6 +731,8 @@ leaflet(closseness_df) |>
 
 > Which healthcare facilities will be most affected by flooding based on accessibility
 metrics?
+
+
 
 ## RQ3: Critical infrastructures
 
