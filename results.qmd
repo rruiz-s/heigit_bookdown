@@ -699,20 +699,29 @@ DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes"
 
 
 ```{r}
+#| eval: false
+#| echo: false
 
 ## Import
-hospitals_closeness_both <- st_read(eisenberg_connection, "hospitals_closeness_both")
+hospitals_closeness_both <- st_read(eisenberg_connection, "hospitals_closeness_both") 
 ## pivot
 hospitals_closeness_long <- hospitals_closeness_both |>
                                   mutate(diff_closeness_percent =
                                            (closeness_post-closeness_pre)/(closeness_pre)*100,
-                                         letter = LETTERS[1:20]) |> 
+                                         diff = closeness_post-closeness_pre,
+                                         letter = LETTERS[1:20]) |>
+  arrange(letter) |> 
                              pivot_longer(
                                      c(closeness_pre,closeness_post),
                                       names_to="closeness_type",
-                                      values_to="closeness_value")
-hospitals_closeness_long_pre <- hospitals_closeness_long |> filter(closeness_type == "closeness_pre")
-hospitals_closeness_long_post <- hospitals_closeness_long |> filter(closeness_type == "closeness_post")
+                                      values_to="closeness_value") 
+                   
+hospitals_closeness_long_pre <- 
+  hospitals_closeness_long |>
+            filter(closeness_type == "closeness_pre")
+hospitals_closeness_long_post <- 
+  hospitals_closeness_long |>
+  filter(closeness_type == "closeness_post")
 ##
 
 df_labels <- hospitals_closeness_long |> 
@@ -720,14 +729,30 @@ df_labels <- hospitals_closeness_long |>
   summarize(midpoint = mean(closeness_value), 
             diff_closeness_percent = first(diff_closeness_percent))
 ##
-p <- ggplot(hospitals_closeness_long) +
-  geom_segment(data=hospitals_closeness_long$closeness_value,
-               aes(x=closeness, y = letter,
-                   yend=hospitals_closeness_long_post$closeness_value)) +
-  geom_point(aes(x=closeness_value, y = letter, color = closeness_type))
+p <- ggplot(hospitals_closeness_long, aes(x=closeness_value, y=reorder(letter, desc(diff_closeness_percent)))) +
+  geom_segment(data=hospitals_closeness_long_pre,
+               aes(x=closeness_value, y = letter,
+                   yend=hospitals_closeness_long_post$letter, xend=hospitals_closeness_long_post$closeness_value)) +
+  geom_point(aes(x=closeness_value, y = letter, color = closeness_type, size=2.5))  +
+  geom_text(data = df_labels, aes(x = midpoint, y = letter, label = paste0(round(diff_closeness_percent,2), " %")), 
+            vjust = 1.5, size = 3.5, color = "red") +
+    geom_text(aes(label = closeness_value, color = closeness_type), vjust = -1, size=3.5) +  # Label the points with centrality_value
+   scale_color_brewer(palette = "Set1", direction = 1) +
+  scale_y_discrete(expand=c(0.05,0.05)) +
+  theme_minimal() +
+  labs(title = "Centrality analysis",
+       subtitle= "Change of centrality of hospitals due to the flooding",
+       y = " Hospitals",
+       x = "Closenness") +
+  theme(plot.title=element_text(family ="bold", hjust=0.5),
+        axis.text.y = element_text(size = 16),
+        plot.subtitle = element_text(colour="#626262", hjust=0.5),
+        legend.position='bottom') +
+  xlim(0,47000) 
 
 ```
 
+![](/media/accessibility_test2.png){width=444 height = 760}
 
 ## RQ3: Critical infrastructures
 
