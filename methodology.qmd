@@ -3,10 +3,9 @@
 #| output: false
 #| warning: false
 
-lapply(c("tidyverse","DT","leaflet","sf","htmltools", "DBI", "mapview","leafpop"),
+lapply(c("tidyverse","DT","leaflet","sf","htmltools", "DBI", "mapview","leafpop","RPostgres","dplyr","leaflet","leafsync","terra","raster","stars", "lwgeom","leaflet.extras2","RColorBrewer","tidygeocoder"),
        require,
        character.only =T)
-
 eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
                           user= "docker",
                           password = "docker",
@@ -47,7 +46,6 @@ DT::datatable(data_df, class='compact', rownames=FALSE, escape= FALSE, caption =
 ![](/media/workflow_methodology.png)
 
 ## Area of Interest
-### Import
 
 The tool ogr2ogr imported the data and adjust the geometry according to the recommendations. The recommendation was “pgRouting processes single features more effficiently than multiegeometries, so whenver possible, choose single over multi” mentioned in the book pgrouting.
 
@@ -72,7 +70,7 @@ ogr2ogr -f PostgreSQL PG:"host=localhost port= 25432 user=docker password=docker
 ```
 
 
-#### Network: OpenStreetMap (OSM)
+### Geometry: OpenStreetMap network (OSM)
 
 The following SQL code created the command to import OpenStreetMap (OSM) network using osmium. Firstly using the [GHS-SMOD dataset](https://human-settlement.emergency.copernicus.eu/download.php?ds=smod) the Global Human Settlement in Porto Alegre is chosen. Secondly, this GHS selected is used to create the bounding box that it is lastly used to generate the osmium code. The OSM network obtained with this osmium command was the input required for OpenRouteService ([ORS](https://heigit.org/introducing-openrouteservice-version-8-0-a-dedication-to-wilfried-juling/)). 
 
@@ -116,37 +114,68 @@ FROM porto_alegre_ghs_bbox_osmium_command;
 ```
 
 
-#### Graph: OpenRouteService (OSM)
+### Graph: OpenRouteService network (ORS)
 
-A [docker for OpenRouteService](https://giscience.github.io/openrouteservice/run-instance/running-with-docker) transformed the OSM network that covered the GHS in Porto Alegre into a graph. In the "ors-config.yml" from OpenRotueService (ORS), the "source_file" parameter is set with the following directory.
+Firstly, a [docker for OpenRouteService](https://giscience.github.io/openrouteservice/run-instance/running-with-docker) transformed the OSM network that covered the GHS in Porto Alegre into a graph. In the "ors-config.yml" from OpenRotueService (ORS), the "source_file" parameter is set with the following directory. OpenRouteService (ORS) created a a routable network, assigining costs and adding information for each node, namely, "fromId" and "toId". The R script "get_graph" from Marcel Reinmuth exported the ORS network named as "porto_alegre_net".
 
-```{r}
+Secondly, the parameters start_vid, end_vid named "fromid" and "toid" in the network dataset from openrouteservice are transform into bigint data type to run the algorithm pgr_dijkstra as the [official documentation](https://docs.pgrouting.org/latest/en/pgr_dijkstra.html) indicates.  
+
+```{sql}
 #| eval: false
+--- Firstly, the source_file parameter in the ors.config.yml file is set to the OSM network previously obtained 
 source_file: /home/ors/files/puerto_alegre_urban_center.osm.pbf
-```
-
-OpenRouteService (ORS) created a a routable network, assigining costs and adding information for each node, namely, "fromId" and "toId". The network named as "porto_alegre_net" extracted from ORS was created using the R script "get_graph" from Marcel Reinmuth.
-
-### Cleaning
-
-The parameters start_vid, end_vid named "fromid" and "toid" in the network dataset from openrouteservice are transform into bigint data type to run the algorithm pgr_dijkstra as the [official documentation](https://docs.pgrouting.org/latest/en/pgr_dijkstra.html) indicates.  
-
-```{r}
-#| eval: false
+---- Secondly the exported ORS graph is prepared for pgrouting casting the right data type for the pgrouting functions.
 select * from porto_alegre_net_pre; 
 ALTER TABLE porto_alegre_net_pre 
 	ALTER COLUMN "toid" type bigint,
 	ALTER COLUMN "fromid" type bigint,
 	ALTER COLUMN "ogc_fid" type bigint;
 ```
-#### Graph
 
-Before using the graph, a quick inspection of the graph using the pgrouting function [*pgr_strongComponents()*](https://docs.pgrouting.org/dev/en/pgr_strongComponents.html) revealed how many components or isolated self-connecting network the graph had. 
+
+```{r}
+#| warning: false
+#| message: false
+
+## Load data
+ors_network <- st_read(eisenberg_connection, layer="porto_alegre_net_pre")
+osm_network <- st_read(eisenberg_connection, layer="puerto_alegre_ghs_osm")
+ors_network_subset <- ors_network |> head()
+## Create subset using a bounding box
+ors_subset <- ors_network |> filter(id ==140210) |> st_bbox()
+xrange <- ors_subset$xmax - ors_subset$xmin
+yrange <- ors_subset$ymax - ors_subset$ymin
+## Expand the bounding box
+ors_subset[1] <- ors_subset[1] - (4 * xrange) # xmin - left
+ors_subset[3] <- ors_subset[3] + (4 * xrange) # xmax - right
+ors_subset[2] <- ors_subset[2] - (2 * yrange) # ymin - bottom
+ors_subset[4] <- ors_subset[4] + (2 * yrange) # ymax - top
+## Convert bounding box into polygon
+ors_subset_bbox <- ors_subset %>%  # 
+  st_as_sfc() 
+## Use the polygon to subset the network
+intersection_ors <- sf::st_intersection(ors_network, ors_subset_bbox)
+intersection_osm <- sf::st_intersection(osm_network, ors_subset_bbox)
+## Mapview maps
+m1 <- mapview(intersection_osm, 
+              color="#6e93ff",
+              layer.name ="OpenStreetMap - Geometry",
+              popup=popupTable(intersection_osm, 
+                               zcol=c("id","osm_id","name","geom")))
+m2 <- mapview(intersection_ors,
+              color ="#d50038",
+              layer.name="OpenRouteService -Graph",
+              popup=popupTable(intersection_ors))
+sync(m1,m2) 
+```
+##### Inspection of ORS graph network
+
+Before using the graph, a quick inspection of the graph using the pgrouting function [*pgr_strongComponents()*](https://docs.pgrouting.org/dev/en/pgr_strongComponents.html) revealed how many components or isolated self-connecting network the graph had.  The largest network component is selected using the length. The following code created a table with the different components and another table containing the largest component ruling out the rest of the components with relatively small networks.
 
 ```{sql}
 #| eval: false
-
---- Create a vertice table for pgr_dijkstra()
+--- 1) Quick inspection of the graph to determine components
+---- Create a vertice table for pgr_dijkstra()
 SELECT 
   pgr_createVerticesTable('porto_alegre_net_pre', source:='fromid', target:='toid');
   
@@ -180,14 +209,7 @@ FROM
     porto_alegre_net_component_geom
 GROUP BY component
 ORDER BY length DESC;
-
-```
-
-The largest length selected the network component of the study. The following code created this table ruling out the rest of the relatively small networks.
-
-```{sql}
-#| eval: false
-
+--- 2) A table with the component of the network with the highest length
 CREATE TABLE porto_alegre_net_largest AS
 ---- Obtain again table classifying nodes in different components           
 WITH porto_alegre_net_component AS (
@@ -226,15 +248,54 @@ WHERE
     net_multi_component.fromid IN (net_largest_component.node);
 ```
 
-#### Flooding mask
+
+```{=html}
+<iframe width="760" height="500" src="/media/network_components_three.html" title = "Inspect of the components in the graph network "></iframe>
+```
+
+
+```{r}
+#| eval: false
+
+component_analysis_network <- st_read(eisenberg_connection, "component_analysis_network_porto")
+## Select top 3
+component_analysis_network_3 <-  component_analysis_network |> arrange(desc(distance)) |> slice(1:3) 
+### Tidy component to be used as categorical variable
+component_analysis_network_3$component  <- component_analysis_network_3$component |> as.character() |> as_factor()
+## Visualization
+m1_net <- component_analysis_network_3 |>
+              filter(component=="1") |>
+              mapview(layer.name = "1st Longest Network",
+                      lwd= 0.5,
+                      color="#66c2a5")
+
+m2_net <- component_analysis_network_3 |> 
+              filter(component=="3728") |>
+              mapview(layer.name = "2nd Longest Network",
+                      color ="#8da0cb",
+                      lwd=0.5)
+
+m3_net <- component_analysis_network_3 |>
+              filter(component=="40578") |>
+              mapview(layer.name = "3rd Longest Network",
+                      color="#fc8d62",
+                      lwd =0.5)
+
+m1_net + m2_net + m3_net
+ 
+```
+
+
+### Flooding mask
 
 The downloaded flooding extent covered a larger area in Rio Grande do Sul. However, our area of interest for urban dense city was only Porto Alegre. Therefore, a serie of operations reduced the area focusing on Porto Alegre and at the same time improved the performance reducing the size of the mask.
 
-Subdividing the flooding mask to make the spatial indexes more efficient was the first step. The reason was the higher number of vertices of large objects and larges bounding boxes that hinder the spatial index performance ([Link](https://blog.cleverelephant.ca/2019/11/subdivide.html)). After the spatial indexes were enable, the intersection with the Porto Alegre region subset the data.
+Subdividing the flooding mask to make the spatial indexes more efficient was the first step. The reason was the higher number of vertices of large objects and larges bounding boxes that hinder the spatial index performance ([Link](https://blog.cleverelephant.ca/2019/11/subdivide.html)). After the spatial indexes were enable, the intersection with the Porto Alegre region subset the data. Additionally, the following code dissolve the borders to break the multipolygon into simple polygons to improve the performance of functions such as st_difference() ([link](https://icarto.es/en/improve-performance-making-the-difference-between-two-layers-with-postgis/)).
 
 ```{sql}
 #| eval: false
 
+--- 1) Subdividing to make spatial indexes more efficent
 --- Select the GHS area that intersects with Porto Alegre
 CREATE TABLE flooding_subdivided_porto AS
 WITH porto_alegre_ghs AS(
@@ -268,75 +329,156 @@ FROM
     porto_alegre_ghs_bbox
 WHERE 
     st_intersects(flooding_sul_subdivided.the_geom, porto_alegre_ghs_bbox.geom_bbox);
-```
-
-Additionally, the following code dissolve the borders to break the multipolygon into simple polygons to improve the performance of functions such as st_difference() ([link](https://icarto.es/en/improve-performance-making-the-difference-between-two-layers-with-postgis/)).
-
-```{sql}
-#| eval: false
-
+--- 2) Simplifying geometry
 CREATE TABLE flooding_cleaned_porto AS
-    SELECT (ST_Dump(the_geom)).geom::geometry(polygon, 4326) geom FROM flooding_subdivided_porto;
+    SELECT
+        (ST_Dump(the_geom)).geom::geometry(polygon, 4326) geom 
+    FROM 
+        flooding_subdivided_porto;
     
 CREATE TABLE flooding_cleaned_porto_union AS
-    SELECT ST_Union(geom)::geometry(multipolygon, 4326) geom FROM flooding_cleaned_porto;
+    SELECT
+        ST_Union(geom)::geometry(multipolygon, 4326) geom 
+    FROM 
+        flooding_cleaned_porto;
     
 CREATE TABLE flooding_cleaned_porto_union_simple AS
-    SELECT (ST_Dump(geom)).geom::geometry(polygon, 4326) geom FROM flooding_cleaned_porto_union;
-    
+    SELECT 
+        (ST_Dump(geom)).geom::geometry(polygon, 4326) geom 
+    FROM 
+        flooding_cleaned_porto_union;
+--- This allowed to calculate the area of each polygon finding slivers that were removed using the following code. 
 SELECT COUNT(*)
      FROM flooding_cleaned_porto_union_simple ; --- count= 54.
 
-DELETE FROM flooding_cleaned_porto_union_simple WHERE ST_Area(geom) < 0.0001; ---count= 2.
+DELETE FROM 
+  flooding_cleaned_porto_union_simple
+WHERE 
+  ST_Area(geom) < 0.0001; ---count= 2.
 
 ```
 
+```{r}
+#| echo: false
 
-This allowed to calculate the area of each polygon finding slivers that were removed using the following code. 
+df_flooding <- data.frame(
+    table = c("flooding_rio_grande_do_sul","flooding_subdivided_porto","flooding_cleaned_porto","flooding_cleaned_porto_union","flooding_cleaned_porto_union_simple"),
+    st_npoints=c(810007,11732,11732,11352,11352),
+    st_memsize=c("13312 kB","191 kB","191 kB","179 kB","181 kB"),
+    st_area=c(709518,44071,44071, 44071,44071)
+)
+DT::datatable(df_flooding, 
+              colnames= c("Table","Nº of points","Size in memory", "Area"),
+              filter="top",
+              class='compact', rownames=FALSE, escape=FALSE, caption='Simplification of the flooding extent',
+              extensions=c("Buttons",'RowGroup'),
+              options=list(
+                  order=list(list(1, 'desc'), list(3,'desc')),
+                  dom="Bfrtip",
+                  initComplete = JS(
+                      "function(settings, json) {",
+                      "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+                      "}")
+              )
+) |> 
+      DT::formatStyle("st_npoints",
+     background=DT::styleColorBar(range(df_flooding$st_npoints), '#ee8b8b'),
+                    backgroundSize='98% 88%',
+                    backgroundRepeat='no-repeat',
+                    backgroundPosition='center') 
 
-### Transform
-
-The creation of the network after the disaster using the modified flooding mask and the creation of the origin-destination are considered in this section. The following code set the paremeters before carrying out these transformations following [post 1](https://blog.cleverelephant.ca/2019/05/parallel-postgis-4.html) and [post2](https://gis-ops.com/pgrouting-speedups/).
-
-Firstly, add spatial index everywhere:
+```
 
 
 ```{sql}
 #| eval: false
 
+## Obtain Area
+SELECT 
+  sum(st_area(geom::geography)/10000)::integer 
+FROM  
+  flooding_cleaned_porto_union_simple;
+## Obtain size in memory
+SELECT 
+  pg_size_pretty(SUM(ST_MemSize(geom))) 
+FROM  
+  flooding_cleaned_porto_union_simple;
+## Obtain number of points
+SELECT 
+  sum(ST_Npoints(geom)) 
+FROM  
+  flooding_cleaned_porto_union_simple;
+```
+
+## Routable network
+
+The creation of the network after the disaster using the modified flooding mask and the creation of the origin-destination are considered in this section. The following code set the paremeters before carrying out these transformations following [post 1](https://blog.cleverelephant.ca/2019/05/parallel-postgis-4.html) and [post2](https://gis-ops.com/pgrouting-speedups/).
+
+```{sql}
+#| eval: false
+
+--- Firstly, add spatial index everywhere:
 CREATE INDEX idx_porto_alegre_net_largest_geom ON porto_alegre_net_largest USING gist(the_geom);
 CREATE INDEX idx_porto_alegre_net_largest_source ON porto_alegre_net_largest USING btree(fromid);
 CREATE INDEX idx_porto_alegre_net_largest_target ON porto_alegre_net_largest USING btree(toid);
 CREATE INDEX idx_porto_alegre_net_largest_id ON porto_alegre_net_largest USING btree(ogc_fid);
 CREATE INDEX idx_porto_alegre_net_largest_cost ON porto_alegre_net_largest USING btree(weight);
-```
-
-
-```{sql}
-#| eval: false
+--- Set up the configuration
+----- Increase performance by using more max_parallel_workes_per_gather
 SET max_parallel_workers_per_gather =4;
-```
-
-```{sql}
-#| eval: false
+----- Cluster the index
 CLUSTER porto_alegre_net_largest USING porto_alegre_net_largest;
 ```
 
-#### Network after the disaster
-
-A naive approach overlaying the flooding mask with the road network by the function *st_difference()* caused the crashing of the session.  The follwing multi-step methodology reduced the processing cost make the query feasible using less resources.
-
-1. Network inside the flooding mask
-2. Network outside the flooding mask
-3. Network on the boundaries
-4. Applying st_difference
-5. Uniting network external to the boundaries and network from outside
-
-1.The network contained by the flooding extent and its intersection is selected.
+#### Pre-Disaster network
 
 ```{sql}
 #| eval: false
-------------- network inside
+
+CREATE TABLE porto_alegre_net_largest AS
+---- Obtain again table classifying nodes in different components		    
+WITH porto_alegre_net_component AS (
+SELECT 
+  * 
+FROM 
+  pgr_strongComponents('SELECT id,
+                               source,
+                               target,
+                               cost 
+                        FROM 
+                              porto_alegre_net_pre')),
+--- Calculate the largest component from the network
+largest_component_net AS (
+	SELECT 
+		component
+	FROM 
+	 	component_analysis_network_porto 
+	LIMIT 1),
+--- Using the largest component from the network to filter
+largeset_component_network_porto AS (
+SELECT
+	*  
+FROM
+	porto_alegre_net_component,
+	largest_component_net
+WHERE 
+	porto_alegre_net_component.component = largest_component_net.component)
+SELECT 
+	net_multi_component.*
+FROM 
+	porto_alegre_net_pre AS net_multi_component,
+	largeset_component_network_porto AS net_largest_component
+WHERE  
+	net_multi_component.source IN (net_largest_component.node);
+```
+
+#### Post-Disaster network
+
+A naive approach overlaying the flooding mask with the road network by the function *st_difference()* caused the session to crash.  The follwing multi-step methodology reduced the processing cost making the query feasible using less resources. Firstly the network inside the flooding mask is selected. Secondly, a subset of the network outside the flooding mask avoided using spatial operations saving computing resources by using the ID's from the network inside the flooding to filter the data.Thirdly, to obtain the boundaries between the inside and outside network, the geometry is converted into its exterior ring. From this network on the boundary, only the exterior part that intersected with the outside boundary was selected.   
+
+```{sql}
+#| eval: false
+--- 1) Network inside the flooding mask
 CREATE TABLE porto_alegre_street_in_v2 AS
 SELECT net.id,
     CASE 
@@ -347,29 +489,14 @@ SELECT net.id,
 FROM porto_alegre_net_largest net
 JOIN flooding_subdivided_porto flood
 ON st_intersects(net.the_geom, flood.the_geom);
-
-```
-
-2. Instead of using columns containing geometrical variables, the numerical ID is used. For this the previous step, which created a table with the network inside the flooding mask was required.
-
-```{sql}
-#| eval: false
------------------ network outside
------------------ network outside
+--- 2) Network outside the flooding mask
 CREATE TABLE porto_alegre_street_out_v2 AS
 SELECT net.*
 FROM porto_alegre_net_largest net
 WHERE net.id NOT IN (
     SELECT net.id
     FROM porto_alegre_street_in_v2 net);
-
-```
-
-3. The function St_ExteriorRing() casted the geometry into linestring reducing the processing costs. This exterior ring selected the road segments located on the boundaries.
-
-```{sql}
-#| eval: false
-
+--- 3) Network on the boundaries
 CREATE TABLE porto_alegre_net_outside_v2 AS
 WITH porto_alegre_ghs AS(
     SELECT 
@@ -422,14 +549,6 @@ porto_alegre_net_largest AS net
 JOIN exterior_ring_porto_alegre_v2 flood ON
 st_intersects(net.the_geom, flood.geom);
 
-```
-
-4. 
-
-
-```{sql}
-#| eval: false
-
 ---- For the network
 CREATE INDEX idx_porto_alegre_net_outside_v2 ON porto_alegre_net_outside_v2 USING gist (geom);
 
@@ -439,22 +558,17 @@ CLUSTER porto_alegre_net_outside_v2 USING idx_porto_alegre_net_outside_v2;
 CREATE INDEX flooding_sul_subdivided_idx ON flooding_sul_subdivided USING gist (the_geom);
 
 CLUSTER flooding_sul_subdivided USING flooding_sul_subdivided_idx;
-
 ---- Before doing difference
 VACUUM(FULL, ANALYZE) porto_alegre_net_outside_v2;
 VACUUM(FULL, ANALYZE) flooding_sul_subdivided;
-```
-
-Lastly, the difference is created using:
-
-```{sql}
-#| eval: false
+--- st_difference and uniting the external to the boundaries
+---  Unite the subunits of the flooding
 CREATE TABLE flooding_symple as 
 SELECT st_union(geom) as the_geom FROM flooding_cleaned_porto_union_simple;
-
+---- Index the flooding
 CREATE INDEX flooding_symple_idx ON flooding_symple USING gist (the_geom);
 CLUSTER flooding_symple USING flooding_symple_idx;
-
+--- 4) Obtain the boundary network that intersect with the outside network
 CREATE TABLE difference_outside_flood_v3 AS
 SELECT net.id,
         target,
@@ -465,73 +579,8 @@ SELECT net.id,
 st_difference(net.geom, flood.the_geom) AS the_geom
 FROM porto_alegre_net_outside_v2 AS net,
 flooding_symple  AS flood;
-```
 
-
-```{r}
-#| eval: false
-
-porto_alegre_net_pre <- sf::st_read(eisenberg_connection, "porto_alegre_net_largest")
-centrality_pre <- sf::st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
-flooding <- sf::st_read(eisenberg_connection, "flooding_cleaned_porto")
-net_in <- sf::st_read(eisenberg_connection, "porto_alegre_street_in_v2")
-## subset
-subset_network_pre <-  sf::st_read(eisenberg_connection, "porto_alegre_net_largest_subset")
-subset_network_in <- sf::st_read("/home/ricardo/heigit_bookdown/data/porto_alegre_street_in_v3_subset.geojson")
-subset_network_out <- sf::st_read(eisenberg_connection, "porto_alegre_street_out_v3") |> st_as_sfc() 
-subset_network_outside_flood <-sf::st_read(eisenberg_connection, "difference_outside_flood_v4")
-subset_network_post <- sf::st_read(eisenberg_connection, "porto_alegre_street_united_v3")
-flooding <- sf::st_read(eisenberg_connection, "flooding_symple") 
-flooding <- st_union(flooding$the_geom, by_feature= FALSE)
-
-## centrality
-mapview(subset_network_pre,
-          color="#d4e7e7",
-          lwd= 0.5,
-          layer.name="Pre-flooding network",
-          popup=popupTable(subset_network_pre,
-          zcol=c("id","source","target","bidirectid"))) +
-  mapview(flooding,
-          color="darkblue",
-          alpha.regions= 0.5,
-          layer.name="Flooding layer") + 
-  mapview(subset_network_in,
-          color="red",
-          lwd= 0.5,
-          legend = FALSE,
-          hide = TRUE,
-          layer.name="Network in the flooding") +
-  mapview(subset_network_out,
-          color="darkcyan",
-          lwd= 0.5,
-          hide = TRUE,
-          layer.name="Flooding outside the network",
-          popup=popupTable(subset_network_out)) +
-  mapview(subset_network_outside_flood,
-          color="yellow",
-          lwd= 0.8,
-          legend = FALSE,
-          layer.name="Boundary network",
-          popup=popupTable(subset_network_outside_flood)) +
-    mapview(subset_network_post,
-          color="darkorange",
-          lwd= 0.8,
-          hide =TRUE,
-          layer.name="Post-flooding network",
-          popup=popupTable(subset_network_post))
-
-
-  
-
-```
-
-
-As a final step, they are merged.
-
-```{sql}
-#| eval: false
-
------------
+--- 5) Unite outside network with the external part of the boundary network
 CREATE TABLE porto_alegre_street_united AS
 SELECT *
 FROM porto_alegre_street_out
@@ -541,8 +590,59 @@ FROM difference_outside_flood_v2;
 
 ```
 
+```{r}
+#| eval: false
+porto_alegre_net_pre <- sf::st_read(eisenberg_connection, "porto_alegre_net_largest")
+centrality_pre <- sf::st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
+flooding <- sf::st_read(eisenberg_connection, "flooding_cleaned_porto")
+net_in <- sf::st_read(eisenberg_connection, "porto_alegre_street_in_v2")
+## subset
+subset_network_pre <-  sf::st_read(eisenberg_connection, "porto_alegre_net_largest_subset")
+subset_network_in <- sf::st_read("/home/ricardo/heigit_bookdown/data/porto_alegre_street_in_v3_subset.geojson") |> select("geometry")
+subset_network_out <- sf::st_read("/home/ricardo/heigit_bookdown/data/porto_alegre_street_out_subset.geojson")  
+subset_network_outside_flood <-sf::st_read("/home/ricardo/heigit_bookdown/data/porto_alegre_street_outside_subset.geojson") 
+subset_network_post <- sf::st_read(eisenberg_connection, "reet_united_v3")
+flooding <- sf::st_read(eisenberg_connection, "flooding_symple") |> st_as_sf() 
+## centrality
+mapview(subset_network_pre,
+          color="#d4e7e7",
+          lwd= 1,
+          layer.name="0.Pre-flooding network",
+          popup=popupTable(subset_network_pre,
+          zcol=c("id","source","target","bidirectid"))) +
+  mapview(flooding,
+          color="darkblue",
+          alpha.regions= 0.5,
+          layer.name="0.Flooding layer") +
+  mapview(subset_network_in,
+          color="red",
+          lwd= 1,
+          hide = TRUE,
+          layer.name="1.Network inside the flooding") +
+  mapview(subset_network_out,
+          color="yellow",
+          lwd= 1.2,
+          hide = TRUE,
+          layer.name="2.Flooding outside the flooding mask",
+          popup=popupTable(subset_network_out)) +
+  mapview(subset_network_outside_flood,
+          color="lightgreen",
+          lwd= 1.4,
+          hide = TRUE,
+          layer.name="3 & 4. Network on the boundaries",
+          popup=popupTable(subset_network_outside_flood)) +
+    mapview(subset_network_post,
+          color="green",
+          lwd= 1,
+          hide =TRUE,
+          layer.name="5. Uniting network external to the boundires and network from outside",
+          popup=popupTable(subset_network_post))
+```
 
-## Routable network
+
+```{=html}
+<iframe width="760" height="500" src="/media/network_post_creation.html" title = "Methodology to create post-flooding network "></iframe>
+```
 
 ```{sql}
 #| eval: false
@@ -553,17 +653,9 @@ SELECT pgr_createVerticesTable(
             the_geom:= 'the_geom',
             source:= 'fromid',
             target:= 'toid')
-
 ```
 
 
-```{sql}
-#| eval: false
-#| connection: eisenberg_connection
-
-ALTER TABLE od_2728
-ADD COLUMN id SERIAL PRIMARY KEY;
-```
 
 ### Post-scenario
 
@@ -723,13 +815,18 @@ VACUUM(full, ANALYZE) porto_alegre_net_largest;
 
 ### Origin-Destination
 
-#### Random distribution (naive)
+#### Regular distribution (naive)
 
 A series of regular points that represented the origin and destination on the Area of Interest is created with the function  ["I_Grid_Point_Series"](https://gis.stackexchange.com/questions/4663/creating-regular-point-grid-inside-polygon-in-postgis).
 
+The following code created 1258 points representing the origin or destination regularly separated by 0.01º.
+
+The application of two indexes improved further queries on this new table. This was recommended because these points were outside the network requiring snapping, which is a spatial operation with relatively high computational costs. 
+Apart from indexing the geometry column and the id, the query is constrained to a buffer of 0.02º to reduce computational costs.
+
 ```{sql}
 #| eval: false
---- Creating sampel data:
+--- Creating the function that sample regularly:
 CREATE OR REPLACE FUNCTION I_Grid_Point_Series(geom geometry, x_side decimal, y_side decimal, spheroid boolean default false)
 RETURNS SETOF geometry AS $BODY$
 DECLARE
@@ -770,13 +867,7 @@ generate_series(0, y_series) as y
 WHERE st_intersects(st_setsrid(ST_MakePoint(x*x_side + x_min, y*y_side + y_min), srid), geom);
 END;
 $BODY$ LANGUAGE plpgsql IMMUTABLE STRICT;
-
-```
-
-The following code created 1258 points representing the origin or destination regularly separated by 0.01º.
-
-```{sql}
-#| eval: false
+--- Using this function to create the sampling table
 CREATE TABLE regular_point_od AS (
 WITH multipoint_regular AS(
 select 
@@ -791,20 +882,14 @@ SELECT
     geom
 FROM 
     point_regular);
-```
-
-The application of two indexes improved further queries on this new table. This was recommended because these points were outside the network requiring snapping, which is a spatial operation with relatively high computational costs. 
-
-```{sql}
-#| eval: false
+--- Applying indexes
 CREATE INDEX idx_regular_point_od_geom ON regular_point_od USING GIST (geom);
 CREATE INDEX idx_regular_point_od_id ON regular_point_od USING btree(id);
 ```
 
-Apart from indexing the geometry column and the id, the query is constrained to a buffer of 0.02º to reduce computational costs.
-
-
 #### Weighted on building volume
+
+In R...
 
 ```{r}
 #| eval: false 
@@ -835,9 +920,8 @@ Snap the points
 #| connection: eisenberg_connection
 
 --- Create ID column
-
 ALTER TABLE od_2728
-ADD COLUMN id serial primary key;
+ADD COLUMN id serial PRIMARY KEY;
 
 --- Snap all the Apoints based on building density to the closest vertice within the network
 CREATE TABLE od_2728_snapped AS
@@ -865,8 +949,8 @@ WITH porto_100_origin AS (
             od_2728_snapped 
         ORDER BY random() LIMIT 100)
         SELECT * FROM  porto_100_origin;  
+        
 --- Create 100 destination from the snapped points
-
 CREATE TABLE weight_sampling_100_destination  AS
 WITH porto_100_destination AS (
         SELECT
@@ -889,10 +973,7 @@ CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
 VACUUM(full, ANALYZE) weight_sampling_100_origin;
 VACUUM(full, ANALYZE) weight_sampling_100_destination;
 VACUUM(full, ANALYZE) porto_alegre_net_largest;
-```
-
-```{sql}
-#| eval: false
+----
 
 ---- add ID
 ALTER TABLE od_77763
@@ -909,12 +990,8 @@ CREATE INDEX idx_od_77763_id on weighted_sampling
 CREATE INDEX idx_od_77763_geom_build on weighted_sampling 
        USING btree("build");
 ---- The current total is 77763
-```
 
-
-```{sql}
-#| eval: false
-
+----
 CREATE TABLE od_40420_snapped_origin AS
 SELECT DISTINCT ON (net.id)
 	   pt.id AS pt_id,
@@ -930,12 +1007,7 @@ LATERAL (SELECT
 		FROM porto_alegre_net_largest_vertices_pgr AS net
 		 ORDER BY net.the_geom <-> pt.geometry 
 		LIMIT 1) AS net;
-
-```
-
-
-```{sql}
-#| eval: false
+----
 
 CREATE TABLE od_40420_snapped_destination AS
 SELECT DISTINCT ON (net.id)
@@ -952,6 +1024,7 @@ LATERAL (SELECT
 		FROM porto_alegre_net_largest_vertices_pgr AS net
 		 ORDER BY net.the_geom <-> pt.geometry 
 		LIMIT 1) AS net;
+
 ```
 
 #### Hospitals
@@ -1010,8 +1083,89 @@ LIMIT 1) AS f ON true
 CREATE INDEX idx_hospital_rs_node_v2 ON hospital_rs_node_v2 USING btree(id);
 ```
 
+```{=html}
 
-### Centrality Analysis: 
+<iframe width="760" height="500" src="/media/map_sampling_example_v0.html" title = "Inspect of the components in the graph network "></iframe>
+
+```
+
+
+
+
+```{r}
+#| message: false
+#| warning: false
+#| eval: false
+
+## Crop and Reproject
+## gdalwarp -te -4850853.201784615 -3737074.296348413 -4616291.881935796 -3495378.804761388 GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0.tif GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V
+## gdalwarp -t_srs "EPSG:4326" GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0_RioGrandeDoSul.tif GHS_BUILT_V_E2020_GLOBE_R2023A_4326_100_V1_0_RioGrandeDoSul.tif
+pal <- mapview::mapviewPalette("mapviewTopoColors")
+ghs_build <- stack("/home/ricardo/heigit_bookdown/data/GHS_BUILT_V_E2020_GLOBE_R2023A_4326_100_V1_0_RioGrandeDoSul.tif")
+ghs_smod <- stack("/home/ricardo/heigit_bookdown/data/GHS_SMOD_E2020_GLOBE_R2023A_4326_1000_V2_0_RioGrandeDoSul.tif")
+ghs_smod_terra <- terra::rast("/home/ricardo/heigit_bookdown/data/GHS_SMOD_E2020_GLOBE_R2023A_4326_1000_V2_0_RioGrandeDoSul.tif")
+regular_sampling <- st_read("/home/ricardo/heigit_bookdown/data/random_points_snapped.geojson")
+regular_sampling_100 <- sample_n(regular_sampling, size = 100)
+weighted_sampling_origin <- st_read(eisenberg_connection,"weight_sampling_100_origin")
+weighted_sampling_destination <- st_read(eisenberg_connection,"weight_sampling_100_destination")
+
+weighted_sampling_origin$sample <- "origin"
+weighted_sampling_destination$sample <- "destination"
+weighted_sampling_both <- rbind(weighted_sampling_origin,
+                           weighted_sampling_destination )
+
+weighted_sampling <- weighted_sampling_both |> mutate(sample = as.factor(weighted_sampling$sample))
+
+poi_hospital <- st_read(eisenberg_connection,"hospital_rs_node_v2")
+m <- matrix(c(
+     0, 10, NA,   # Values >= 0 and <= 10 become 0
+     10, 13, 1,  # Values > 10 and <= 21 become 1
+     13, 29, 2,  # Values > 21 and <= 29 become 2
+     30, 30, 3   # Values == 30 become 3
+ ), ncol = 3, byrow = TRUE)
+## Classify using the correct matrix
+rc2 <- classify(ghs_smod_terra, m, include.lowest=TRUE)
+rc2_factor <- as.factor(rc2)
+levels(rc2_factor) <- data.frame(
+  ID = 1:3,    # These should match the values in the classification
+  category = c("Rural: 10-13", "Suburban: 13-29", "Urban Center: 30")
+)
+category_colors <- c("#008f44","#dedb96", "#cc9152")
+mapview(ghs_build[[1]],
+        layer.name ="Built-up volume",
+        col.regions = pal(100),
+        alpha.regions= 0.45,
+        hide=TRUE) +
+mapview(ghs_smod[[1]],
+        layer.name = "Settlement classification",
+        col.regions = pal(100),
+        alpha.regions= 0.35,
+        hide=TRUE) +
+mapview(weighted_sampling,
+        layer.name="Weighted samples",
+        zcol="sample",
+        col.regions=c("#2D5CA4","#00A3A0"),
+        hide=TRUE,
+        cex= 3) +
+mapview(regular_sampling_100,
+        color = "darkgray",
+        col.regions="darkgray",
+        cex= 3,
+        legend= FALSE,
+        hide=TRUE) +
+mapview(subset(poi_hospital,
+               select=c("cd_cnes",
+                        "ds_cnes",
+                        "id",
+                        "geom_hospital")),
+                layer.name = "POI - Hospitals",
+                color= "darkred",
+        col.regions="#CA2334",
+               popup=popupTable(poi_hospital, zcol=c("cd_cnes","ds_cnes","id")))
+
+```
+
+### Edge betweenness
 
 ```{sql}
 #| eval: false
@@ -1313,7 +1467,7 @@ SELECT * FROM vertices;
 
 ```{sql}
 #| eval: false
-
+---- Pre-Event
 CREATE TABLE clossness_hospital_porto AS 
 WITH dijkstra_cost AS (
 SELECT * FROM pgr_dijkstraCostMatrix(
@@ -1339,6 +1493,47 @@ FROM
     closeness AS c
 LEFT JOIN
     hospital_rs_node_v3 AS h ON  c.start_vid = h.id;
+--- Post event
+CREATE TABLE clossness_hospital_porto_post AS 
+WITH dijkstra_cost AS (
+SELECT * FROM pgr_dijkstraCostMatrix(
+  'SELECT id, source, target, cost FROM prueba_largest_network_post',
+  (SELECT array_agg(id)
+    FROM prueba_largest_network_post_vertices_pgr
+    WHERE id IN (SELECT id FROM hospital_rs_node_v3)),
+  true)),
+closeness AS (
+ SELECT dc.start_vid,
+        sum(agg_cost)::int AS closeness
+FROM dijkstra_cost dc
+GROUP BY dc.start_vid
+ORDER BY closeness DESC)
+SELECT 
+    h.cd_cnes,
+    h.ds_cnes,
+    c.closeness,
+    h.distance,
+    h.geom_node,
+    h.geom_hospital
+FROM 
+    closeness AS c
+LEFT JOIN
+    hospital_rs_node_v3 AS h ON  c.start_vid = h.id;   
+    
+---- Add centrality from post-event to pre-event
+CREATE TABLE hospitals_closeness_both AS 
+SELECT
+	pre.cd_cnes,
+	pre.ds_cnes,
+	pre.closeness  AS closeness_pre,
+	coalesce(post.closeness,0) AS closeness_post,
+	pre.geom_node,
+	pre.geom_hospital
+FROM 
+	clossness_hospital_porto AS pre
+LEFT JOIN 
+	clossness_hospital_porto_post AS post ON pre.cd_cnes  = post.cd_cnes
+
 ```
 
 #### Vulnerability: Socioeconomic indicators
