@@ -35,115 +35,6 @@ osmium extract -b -51.2791,-30.1722,-50.9407,-29.8048 sul-240501.osm.pbf -o puer
 ```
 
 ![](/media/bbox_porto_alegre_ghs.png){fig-align="center" width="50%"}
-
-Importing the geometries from R from Marcel
-
-```{r}
-#| warning: false
-#| message: false
-
-## Load data
-ors_network <- st_read(eisenberg_connection, layer="porto_alegre_net_pre")
-osm_network <- st_read(eisenberg_connection, layer="puerto_alegre_ghs_osm")
-ors_network_subset <- ors_network |> head()
-## Create subset using a bounding box
-ors_subset <- ors_network |> filter(id ==140210) |> st_bbox()
-xrange <- ors_subset$xmax - ors_subset$xmin
-yrange <- ors_subset$ymax - ors_subset$ymin
-## Expand the bounding box
-ors_subset[1] <- ors_subset[1] - (4 * xrange) # xmin - left
-ors_subset[3] <- ors_subset[3] + (4 * xrange) # xmax - right
-ors_subset[2] <- ors_subset[2] - (2 * yrange) # ymin - bottom
-ors_subset[4] <- ors_subset[4] + (2 * yrange) # ymax - top
-## Convert bounding box into polygon
-ors_subset_bbox <- ors_subset %>%  # 
-  st_as_sfc() 
-## Use the polygon to subset the network
-intersection_ors <- sf::st_intersection(ors_network, ors_subset_bbox)
-intersection_osm <- sf::st_intersection(osm_network, ors_subset_bbox)
-## Mapview maps
-m1 <- mapview(intersection_osm, 
-              color="#6e93ff",
-              layer.name ="OpenStreetMap - Geometry",
-              popup=popupTable(intersection_osm, 
-                               zcol=c("id","osm_id","name","geom")))
-m2 <- mapview(intersection_ors,
-              color ="#d50038",
-              layer.name="OpenRouteService -Graph",
-              popup=popupTable(intersection_ors))
-sync(m1,m2) 
-```
-
-
-### Point of Interest: Sampling points
-
-```{r}
-#| message: false
-#| warning: false
-
-## Crop and Reproject
-## gdalwarp -te -4850853.201784615 -3737074.296348413 -4616291.881935796 -3495378.804761388 GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0.tif GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V
-## gdalwarp -t_srs "EPSG:4326" GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0_RioGrandeDoSul.tif GHS_BUILT_V_E2020_GLOBE_R2023A_4326_100_V1_0_RioGrandeDoSul.tif
-pal <- mapview::mapviewPalette("mapviewTopoColors")
-ghs_build <- stack("/home/ricardo/heigit_bookdown/data/GHS_BUILT_V_E2020_GLOBE_R2023A_4326_100_V1_0_RioGrandeDoSul.tif") 
-ghs_smod <- stack("/home/ricardo/heigit_bookdown/data/GHS_SMOD_E2020_GLOBE_R2023A_4326_1000_V2_0_RioGrandeDoSul.tif")
-ghs_smod_terra <- terra::rast("/home/ricardo/heigit_bookdown/data/GHS_SMOD_E2020_GLOBE_R2023A_4326_1000_V2_0_RioGrandeDoSul.tif")
-regular_sampling <- st_read("/home/ricardo/heigit_bookdown/data/random_points_snapped.geojson")
-weighted_sampling_origin <- st_read(eisenberg_connection,"weight_sampling_100_origin")
-weighted_sampling_destination <- st_read(eisenberg_connection,"weight_sampling_100_destination")
-poi_hospital <- st_read(eisenberg_connection,"hospital_rs_node_v2")
-m <- matrix(c(
-     0, 10, NA,   # Values >= 0 and <= 10 become 0
-     10, 13, 1,  # Values > 10 and <= 21 become 1
-     13, 29, 2,  # Values > 21 and <= 29 become 2
-     30, 30, 3   # Values == 30 become 3
- ), ncol = 3, byrow = TRUE)
-## Classify using the correct matrix
-rc2 <- classify(ghs_smod_terra, m, include.lowest=TRUE)
-rc2_factor <- as.factor(rc2)
-levels(rc2_factor) <- data.frame(
-  ID = 1:3,    # These should match the values in the classification
-  category = c("Rural: 10-13", "Suburban: 13-29", "Urban Center: 30")
-)
-category_colors <- c("#008f44","#dedb96", "#cc9152")
-mapview(ghs_build[[1]],
-        layer.name ="Built-up volume",
-        col.regions = pal(100),
-        legend = TRUE,
-        alpha.regions= 0.35,
-        hide=TRUE) +
-mapview(ghs_smod[[1]],
-        layer.name = "Settlement classification",
-        col.regions = pal(100),
-        legend = TRUE,
-        alpha.regions= 0.35,
-        hide=TRUE) +
-mapview(weighted_sampling_origin,
-        layer.name="Origin samples",
-        color="blue",
-        col.regions = "blue",
-        hide=TRUE) +
-mapview(weighted_sampling_destination,
-        color="darkblue",
-        layer.name="Destination samples",
-        col.regions = "darkblue",
-        hide=TRUE)  +
-mapview(regular_sampling,
-        color = "darkgray",
-        col.regions="darkgray",
-        hide=TRUE) +
-mapview(subset(poi_hospital,
-               select=c("cd_cnes",
-                        "ds_cnes",
-                        "id",
-                        "geom_hospital")),
-                layer.name = "POI - Hospitals",
-                color= "darkred",
-        col.regions="red",
-               popup=popupTable(poi_hospital, zcol=c("cd_cnes","ds_cnes","id")))
-
-```
-
 ### Network
 #### Post-event
 
@@ -152,7 +43,7 @@ mapview(subset(poi_hospital,
 #| eval: false
 #| warning: false
 #| message: false
-
+#| echo: false
 
 ---- Generate the subset to be visualize
 
@@ -328,6 +219,8 @@ FROM difference_outside_flood_v4;
 
 >How does road connectivity change after being impacted by flooding based on
 connectivity metrics?
+
+### Sum Edge Betweenness
 
 ```{r}
 #| eval: false
@@ -605,13 +498,6 @@ par(def_par)
 ```
 
 
-
-## RQ2:  Accessibility analysis
-
-> Which healthcare facilities will be most affected by flooding based on accessibility
-metrics?
-
-
 ### Closeness
 
 
@@ -684,6 +570,162 @@ DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes"
                 backgroundSize = '98% 88%',
   backgroundRepeat = 'no-repeat',
   backgroundPosition = 'center') 
+```
+
+## RQ2:  Accessibility analysis
+
+> Which healthcare facilities will be most affected by flooding based on accessibility
+metrics?
+
+### Test 1:
+
+```{sql}
+#| eval: false
+
+---- Based on a max of 100*100 / 22 = 454   
+SELECT count(*) FROM hospital_rs_node_v2;  --- 22 POI: Hospitals 
+----- Create origin   
+CREATE TABLE weight_sampling_454_origin  AS
+WITH porto_454_origin AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped 
+        ORDER BY random() 
+        LIMIT 454)
+SELECT * FROM  porto_454_origin;
+
+--- Create destinations in this case hospitals
+CREATE TABLE hospital_rs_destination AS
+SELECT 
+	cd_cnes,
+	ds_cnes,
+	id,
+	geom_node
+FROM 
+	hospital_rs_node_v2;  --- 22 POI: Hospitals    
+	
+---- Create hospitald destinations from closeness 
+CREATE TABLE hospital_rs_destination AS
+WITH clossness_hospital_porto_id AS (
+SELECT 
+	n.*,
+	v.id
+FROM 
+	clossness_hospital_porto AS n
+JOIN
+	porto_alegre_net_largest_vertices_pgr AS v
+	ON  st_intersects(n.geom_node, v.the_geom))
+SELECT 
+	cd_cnes,
+	ds_cnes,
+	id,
+	closeness,
+	geom_node
+FROM 
+	clossness_hospital_porto_id; 	
+---- Create index for origin
+CREATE INDEX weight_sampling_454_origin_net_id ON weight_sampling_454_origin USING hash(net_id);
+CREATE INDEX weight_sampling_454_origin_geom ON weight_sampling_454_origin USING gist(the_geom);
+---- Create index for destination
+CREATE INDEX hospital_rs_destination_net_id ON hospital_rs_destination USING btree(id);
+CREATE INDEX hospital_rs_destination_geom ON hospital_rs_destination USING gist(geom_node);
+---- Cluster
+CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
+---- Vacuum clean
+VACUUM(full, ANALYZE) weight_sampling_454_origin;
+VACUUM(full, ANALYZE) hospital_rs_destination;
+VACUUM(full, ANALYZE) porto_alegre_net_largest;
+---- Running the query
+EXPLAIN ANALYZE
+ CREATE TABLE centrality_424_hospitals_porto_end_id_centrality AS
+ SELECT   
+ b.vid,
+ j.end_id,
+ b.the_geom,
+ count(the_geom) as centrality 
+ FROM  pgr_dijkstra('SELECT  id,
+							 source,
+							target,
+							cost
+				      FROM porto_alegre_net_largest',
+				      ARRAY(SELECT net_id AS origin_id FROM weight_sampling_454_origin),
+				      ARRAY(SELECT id AS destination_id FROM hospital_rs_destination),
+				      directed := TRUE) j
+				      left JOIN porto_alegre_net_largest AS b
+				      ON j.edge = b.id
+				      GROUP BY  b.id, j.end_vid, b.the_geom
+				      ORDER BY centrality DESC;  
+ ---- Group by end_vid that represent destination
+select * from hospital_rs_destination ;
+				     
+SELECT * FROM centrality_424_hospitals_porto_end_id_centrality; 				     
+SELECT 
+	centrality.end_vid,
+	hospitals.cd_cnes,
+	hospitals.ds_cnes,
+	count(centrality.the_geom)::int AS sum_centrality,
+	max(st_length(centrality.the_geom::geography))::int AS length
+FROM 
+	centrality_424_hospitals_porto_end_id_centrality AS centrality
+LEFT JOIN 
+	hospital_rs_destination AS hospitals ON  centrality.end_vid = hospitals.id 
+GROUP BY end_vid, cd_cnes, ds_cnes;
+
+```
+
+
+```{r}
+centrality_group_end_vid <-sf::st_read(eisenberg_connection, 
+                            layer = "centrality_424_hospitals_porto_end_id_centrality")
+
+DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes","closeness")),
+              extensions="Buttons",
+                         options=list(
+                           dom="Bfrtip",
+                           buttons=c("copy","csv","pdf"),
+                            initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+    "}")
+                                  )
+              ) |> 
+    DT::formatStyle("closeness",
+              background=DT::styleColorBar(range(closseness_no_geom$closeness),'#ee8b8b'),
+                backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') 
+```
+
+
+```{r}
+
+## Import
+hospitals_closeness_both <- st_read(eisenberg_connection, "hospitals_closeness_both")
+## pivot
+hospitals_closeness_long <- hospitals_closeness_both |>
+                                  mutate(diff_closeness_percent =
+                                           (closeness_post-closeness_pre)/(closeness_pre)*100,
+                                         letter = LETTERS[1:20]) |> 
+                             pivot_longer(
+                                     c(closeness_pre,closeness_post),
+                                      names_to="closeness_type",
+                                      values_to="closeness_value")
+hospitals_closeness_long_pre <- hospitals_closeness_long |> filter(closeness_type == "closeness_pre")
+hospitals_closeness_long_post <- hospitals_closeness_long |> filter(closeness_type == "closeness_post")
+##
+
+df_labels <- hospitals_closeness_long |> 
+  group_by(letter) |> 
+  summarize(midpoint = mean(closeness_value), 
+            diff_closeness_percent = first(diff_closeness_percent))
+##
+p <- ggplot(hospitals_closeness_long) +
+  geom_segment(data=hospitals_closeness_long$closeness_value,
+               aes(x=closeness, y = letter,
+                   yend=hospitals_closeness_long_post$closeness_value)) +
+  geom_point(aes(x=closeness_value, y = letter, color = closeness_type))
+
 ```
 
 
