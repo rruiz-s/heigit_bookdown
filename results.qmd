@@ -577,7 +577,7 @@ DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes"
 > Which healthcare facilities will be most affected by flooding based on accessibility
 metrics?
 
-### Test 1:
+### Sum Edge Betweenness:
 
 ```{sql}
 #| eval: false
@@ -674,12 +674,179 @@ GROUP BY end_vid, cd_cnes, ds_cnes;
 
 ```
 
+```{sql}
+#| eval: false
+
+### Post-scenario
+
+SELECT count(*) FROM hospital_rs_node_v2;  --- 22 POI: Hospitals 
+----- Create origin   
+CREATE TABLE weight_sampling_454_origin_post  AS
+WITH porto_454_origin_post AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_post 
+        ORDER BY random() 
+        LIMIT 454)
+SELECT * FROM  porto_454_origin_post;
+
+--- Create destinations in this case hospitals
+CREATE TABLE hospital_rs_destination AS
+SELECT 
+    cd_cnes,
+    ds_cnes,
+    id,
+    geom_node
+FROM 
+    hospital_rs_node_v2;  --- 22 POI: Hospitals    
+    
+---- Create hospitald destinations from closeness 
+CREATE TABLE hospital_rs_destination AS
+WITH clossness_hospital_porto_id AS (
+SELECT 
+    n.*,
+    v.id
+FROM 
+    clossness_hospital_porto AS n
+JOIN
+    porto_alegre_net_largest_vertices_pgr AS v
+    ON  st_intersects(n.geom_node, v.the_geom))
+SELECT 
+    cd_cnes,
+    ds_cnes,
+    id,
+    closeness,
+    geom_node
+FROM 
+    clossness_hospital_porto_id;    
+---- Create index for origin
+
+CREATE INDEX weight_sampling_454_origin_net_id ON weight_sampling_454_origin_post USING hash(net_id); 
+CREATE INDEX weight_sampling_454_origin_geom ON weight_sampling_454_origin_post USING gist(the_geom);
+---- Create index for destination
+CREATE INDEX hospital_rs_destination_net_id ON hospital_rs_destination USING btree(id);
+CREATE INDEX hospital_rs_destination_geom ON hospital_rs_destination USING gist(geom_node);
+---- Cluster
+CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
+---- Vacuum clean
+VACUUM(full, ANALYZE) weight_sampling_454_origin_post;
+VACUUM(full, ANALYZE) hospital_rs_destination;
+VACUUM(full, ANALYZE) prueba_largest_network_post;
+---- Running the query
+EXPLAIN ANALYZE
+ CREATE TABLE centrality_424_hospitals_porto_end_id_centrality_post AS
+ SELECT   
+ b.ogc_fid,
+ j.end_vid,
+ b.the_geom,
+ count(the_geom) as centrality 
+ FROM  pgr_dijkstra('SELECT  ogc_fid AS id,
+                             fromid AS source,
+                            toid AS target,
+                            weight AS cost
+                      FROM prueba_largest_network_post',
+                      ARRAY(SELECT net_id AS origin_id FROM weight_sampling_454_origin_post),
+                      ARRAY(SELECT id AS destination_id FROM hospital_rs_destination),
+                      directed := TRUE) j
+                      left JOIN prueba_largest_network_post AS b
+                      ON j.edge = b.ogc_fid
+                      GROUP BY  b.ogc_fid, j.end_vid, b.the_geom
+                      ORDER BY centrality DESC;  
+ ---- Group by end_vid that represent destination
+CREATE TABLE centrality_424_hospitals_porto_end_id_centrality_post_group AS
+SELECT 
+    centrality.end_vid,
+    hospitals.cd_cnes,
+    hospitals.ds_cnes,
+    max(centrality.centrality)::int AS max_centrality,
+    max(st_length(centrality.the_geom::geography))::int AS length
+FROM 
+    centrality_424_hospitals_porto_end_id_centrality_post AS centrality
+LEFT JOIN 
+    hospital_rs_destination AS hospitals ON  centrality.end_vid = hospitals.id 
+GROUP BY end_vid, cd_cnes, ds_cnes;
+
+```
+
 
 ```{r}
-centrality_group_end_vid <-sf::st_read(eisenberg_connection, 
-                            layer = "centrality_424_hospitals_porto_end_id_centrality")
+#| eval: false
 
-DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes","closeness")),
+## Eisenberg
+hospitals_betweenness_pre <- st_read(eisenberg_connection, "centrality_424_hospitals_porto_end_id_centrality") 
+hospitals_betweenness_post <- st_read(eisenberg_connection,"centrality_424_hospitals_porto_end_id_centrality_post")
+### Locally
+hospitals_betweenness_pre_local <- st_read(eisenberg_connection, Id(schema="heigit", table = "centrality_424_hospitals_porto_end_id_centrality_group"))
+hospitals_betweenness_post_local <- st_read(eisenberg_connection, Id(schema="heigit", table = "centrality_424_hospitals_porto_end_id_centrality_post_group"))
+hospitals_betweenness_pre_local$event <- "pre-event"
+hospitals_betweenness_post_local$event <- "post-event"
+## Import
+hospitals_betweenness_both_long <- hospitals_betweenness_pre_local |> bind_rows(hospitals_betweenness_post_local) |> subset(select=c("cd_cnes","ds_cnes","max_centrality","event")) |> pivot_wider(
+    names_from = event,
+    values_from = max_centrality,
+  ) |>  rename( betwenness_pre= `pre-event`,
+                betwenness_post= `post-event`) 
+hospitals_betweenness_both_long[is.na(hospitals_betweenness_both_long)] <- 0    
+## pivot
+hospitals_betweenness_long <- hospitals_betweenness_both_long |>
+                                  mutate(diff_betweenness_percent =
+                                           (betwenness_post-betwenness_pre)/(betwenness_pre)*100,
+                                         diff = betwenness_post-betwenness_pre,
+                                         letter = LETTERS[1:22])  |>
+  arrange(letter) |> 
+                             pivot_longer(
+                                     c(betwenness_pre,betwenness_post),
+                                      names_to="betweenness_type",
+                                      values_to="betweenness_value") 
+                   
+hospitals_betweenness_long_pre <- 
+  hospitals_betweenness_long |>
+            filter(betweenness_type == "betwenness_pre")
+hospitals_betweenness_long_post <- 
+  hospitals_betweenness_long |>
+  filter(betweenness_type == "betwenness_post")
+##
+
+df_labels_betweenness <- hospitals_betweenness_long |> 
+  group_by(letter) |> 
+  summarize(midpoint = mean(betweenness_value), 
+            diff_betweenness_percent = first(diff_betweenness_percent))
+##
+p <- ggplot(hospitals_betweenness_long, aes(x=betweenness_value, y=reorder(letter, desc(diff_betweenness_percent)))) +
+  geom_segment(data=hospitals_betweenness_long_pre,
+               aes(x=betweenness_value, y = letter,
+                   yend=hospitals_betweenness_long_post$letter, xend=hospitals_betweenness_long_post$betweenness_value)) +
+  geom_point(aes(x=betweenness_value, y = letter, color = betweenness_type, size=2.5))  +
+  geom_text(data = df_labels_betweenness, aes(x = midpoint, y = letter, label = paste0(round(diff_betweenness_percent,2), " %")), 
+            vjust = 1.5, size = 3.5, color = "red") +
+    geom_text(aes(label = betweenness_value, color = betweenness_type), vjust = -1, size=3.5) +  # Label the points with centrality_value
+   scale_color_brewer(palette = "Set1", direction = 1) +
+  scale_y_discrete(expand=c(0.05,0.05)) +
+  theme_minimal() +
+  labs(title = "Centrality analysis",
+       subtitle= "Change of centrality based on sum edge betweenness in hospitals",
+       y = " Hospitals",
+       x = "Sum Edge Betweenness") +
+  theme(plot.title=element_text(family ="bold", hjust=0.5),
+        axis.text.y = element_text(size = 16),
+        plot.subtitle = element_text(colour="#626262", hjust=0.5),
+        legend.position='bottom') 
+
+### table
+
+df_hospitals_betweenness_both_compare <- hospitals_betweenness_both_long |> 
+                                              mutate(diff_betweenness_percent = 
+                                                          round((betwenness_post-betwenness_pre)/(betwenness_pre)*100,2),
+                                                      diff = betwenness_post-betwenness_pre,
+                                                      letter = LETTERS[1:22],
+                                                      ds_cnes = stringr::str_to_title(ds_cnes))
+                                                  
+  
+DT::datatable(subset(df_hospitals_betweenness_both_compare,
+                     select=c("letter","cd_cnes","ds_cnes","betwenness_pre","betwenness_post","diff_betweenness_percent")),
+              colnames=c("ID","Code","Name","Betweenness Pre","Betweenness Post","Diff(%)"),
+              filter="top",
               extensions="Buttons",
                          options=list(
                            dom="Bfrtip",
@@ -690,12 +857,23 @@ DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes"
     "}")
                                   )
               ) |> 
-    DT::formatStyle("closeness",
-              background=DT::styleColorBar(range(closseness_no_geom$closeness),'#ee8b8b'),
+    DT::formatStyle("betwenness_pre",
+              background=DT::styleColorBar(range(df_hospitals_betweenness_both_compare$betwenness_pre),'#ee8b8b'),
                 backgroundSize = '98% 88%',
   backgroundRepeat = 'no-repeat',
-  backgroundPosition = 'center') 
+  backgroundPosition = 'center') |>
+    DT::formatStyle("betwenness_post",
+              background=DT::styleColorBar(range(df_hospitals_betweenness_both_compare$betwenness_pre),'#8ba1b3'),
+                backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center')
+
 ```
+
+### Closeness:
+
+
+
 
 
 ```{r}
@@ -752,7 +930,47 @@ p <- ggplot(hospitals_closeness_long, aes(x=closeness_value, y=reorder(letter, d
 
 ```
 
-![](/media/accessibility_test2.png){width=444 height = 760}
+![](/media/accessibility_test2.png)
+
+
+
+```{r}
+hospitals_closeness_both <- st_read(eisenberg_connection, "hospitals_closeness_both") 
+df_hospitals_closeness_both_compare <- hospitals_closeness_both |> 
+                                              mutate(diff_closeness_percent = 
+                                                          round((closeness_post-closeness_pre)/(closeness_pre)*100,2),
+                                                      diff = closeness_post-closeness_pre,
+                                                      letter = LETTERS[1:20],
+                                                      ds_cnes = stringr::str_to_title(ds_cnes)) |> 
+                                                  sf::st_drop_geometry() 
+                                                  
+  
+DT::datatable(subset(df_hospitals_closeness_both_compare,
+                     select=c("letter","cd_cnes","ds_cnes","closeness_pre","closeness_post","diff_closeness_percent")),
+              colnames=c("ID","Code","Name","Closeness Pre","Closeness Post","Diff(%)"),
+              filter="top",
+              extensions="Buttons",
+                         options=list(
+                           dom="Bfrtip",
+                           buttons=c("copy","csv","pdf"),
+                            initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+    "}")
+                                  )
+              ) |> 
+    DT::formatStyle("closeness_pre",
+              background=DT::styleColorBar(range(df_hospitals_closeness_both_compare$closeness_pre),'#ee8b8b'),
+                backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') |>
+    DT::formatStyle("closeness_post",
+              background=DT::styleColorBar(range(df_hospitals_closeness_both_compare$closeness_pre),'#8ba1b3'),
+                backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center')
+```
+
 
 ## RQ3: Critical infrastructures
 

@@ -581,12 +581,12 @@ FROM porto_alegre_net_outside_v2 AS net,
 flooding_symple  AS flood;
 
 --- 5) Unite outside network with the external part of the boundary network
-CREATE TABLE porto_alegre_street_united AS
+CREATE TABLE porto_alegre_net_post_v5 AS
 SELECT *
-FROM porto_alegre_street_out
+FROM porto_alegre_street_out_v2
 UNION
 SELECT *
-FROM difference_outside_flood_v2;
+FROM difference_outside_flood_v3;
 
 ```
 
@@ -715,7 +715,7 @@ largests_component_net_post AS (
         length::int
     FROM 
         component_analysis_network_porto_post)
-SELECT * FROM largests_component_net_post WHERE ;
+SELECT * FROM largests_component_net_post;
 
 ---- Visualize which are more important
 CREATE TABLE main_components_post AS
@@ -763,6 +763,23 @@ FROM
     largeset_component_network_porto_post AS net_largest_component
 WHERE  
     net_multi_component.source IN (net_largest_component.node);
+--- Snap 2728 points to post-scenario network
+----
+CREATE TABLE od_2728_snapped_post AS
+SELECT DISTINCT ON (net.id)
+       pt.id AS pt_id,
+       net.id AS net_id,
+       net.the_geom
+FROM 
+(select * 
+FROM 
+    od_2728 as pt) as pt
+CROSS JOIN
+LATERAL (SELECT
+        * 
+        FROM prueba_largest_network_post_vertices_pgr AS net
+         ORDER BY net.the_geom <-> pt.geometry 
+        LIMIT 1) AS net;
 --- Create 100 origin samples from the snapped points post-scenario
 
 CREATE TABLE weight_sampling_100_origin_post  AS
@@ -1314,6 +1331,52 @@ on
     t1.id = t2.id;       
 
 ```
+
+#### Para hospitales
+
+
+```{sql}
+#| eval: false
+---- POST-EVENT
+CREATE TABLE weight_sampling_454_origin_post  AS
+WITH porto_454_origin_post AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_post
+        ORDER BY random() 
+        LIMIT 454)
+SELECT * FROM  porto_454_origin_post;	
+
+---- Create index for origin
+CREATE INDEX weight_sampling_454_origin_post_net_id ON weight_sampling_454_origin_post USING hash(net_id);
+CREATE INDEX weight_sampling_454_origin_post_geom ON weight_sampling_454_origin_post USING gist(the_geom);
+---- Running the query
+ ---- Group by end_vid that represent destination
+EXPLAIN ANALYZE
+ CREATE TABLE centrality_424_hospitals_porto_end_id_centrality_post AS
+ SELECT   
+ b.id,
+ j.end_vid,
+ b.the_geom,
+ count(the_geom) as centrality 
+ FROM  pgr_dijkstra('SELECT  id,
+                             source,
+                            target,
+                            cost
+                      FROM prueba_largest_network_post',
+                      ARRAY(SELECT net_id AS origin_id FROM weight_sampling_454_origin_post),
+                      ARRAY(SELECT id AS destination_id FROM hospital_rs_destination),
+                      directed := TRUE) j
+            LEFT JOIN prueba_largest_network_post AS b
+            ON j.edge = b.id
+            GROUP BY  b.id, j.end_vid, b.the_geom
+            ORDER BY centrality DESC;   
+
+
+
+```
+
 
 #### Edge betweenness
 
