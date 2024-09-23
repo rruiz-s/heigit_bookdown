@@ -1,29 +1,16 @@
 # Introduction
 
-# MAP
+##  Describe a big problem that needs to be solved
 
-AÑadir 
-An innovative approach to assess the impact of urban flooding: Modeling
-transportation system failure due to urban flooding
+Natural hazards are becoming disasters, as the frequency and severity of extreme event related to climate change increase[@kuffer_eo-based_2021]. It is in the magnitude of loss of lives and  economical, environmental and material damage where the difference between natural hazards and disasters lies, requiring external aid [@ayala-carcedo_riesgos_2002]. In this situation, the system's capacity to recover from change, namely, its resilience [@levin_princeton_2012], failed causing the interruption of the urban functionality.
 
 
 
-This is a book created from markdown and executable code.
+## State your strategy to help solve the problem
 
-See @knuth84 for additional discussion of literate programming.
-
-```{r}
-1 + 1
-```
+--- Connectivity, Accesibility, Resilience
 
 
-![](/media/framework_heigit.png)
+## State a specific research question/hypothesis whose ansswer/test will help to solve the problem
 
-The **research objective** is to improve urban resilience by identifying critical infrastructures necessary for accessing healthcare facilities, comparing road connectivity and accessibility. The following research questions are addressed in this study:
 
-## Research questions
-
-1. How did the road connectivity of the city network change after being impacted by the floodings in Rio Grande do Sul based on Edge Betweenness Centrality?
-2. Which healthcare facilities were most affected by the floodings based on
-accessibility metrics?
-3. In which area of a city’s network should decisions be made to reinforce or redesign routes to optimize healthcare accessibility and ensure minimal disruption during flood events?

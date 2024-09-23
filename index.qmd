@@ -1,3 +1,55 @@
 # Preface {.unnumbered}
 
-s
+## Project context
+
+### What problems are involved withnt the project context?
+
+### What is the background to these problems?
+
+### What soilutions are the stakeholders considering?
+
+## Conceptual design
+
+![](/media/framework_heigit.png)
+
+The scientific procedure is carried out from an evaluation research perspective shown in the figure 1. A set of criteria facilitates informed-decisions to improve city resilience by identifying and prioritizing critical infrastructures in the road network to access healthcare facilities. (a) An assessment of the network analysis and accessibility access to healthcare facilities before and after a disaster (b) identifies critical infrastructures (c).
+
+The **research objective** is to improve urban resilience by identifying critical infrastructures necessary for accessing healthcare facilities, comparing road connectivity and accessibility. The following research questions are addressed in this study:
+
+## Research questions
+
+1. How did the road connectivity of the city network change after being impacted by the floodings in Rio Grande do Sul based on Edge Betweenness Centrality?
+2. Which healthcare facilities were most affected by the floodings based on
+accessibility metrics?
+3. In which area of a city’s network should decisions be made to reinforce or redesign routes to optimize healthcare accessibility and ensure minimal disruption during flood events?
+
+```{r}
+#| eval: false
+
+library(tidygeocoder)
+
+some_addresses <- tibble::tribble(
+  ~name, ~addr,
+  "number one", "Mathias Velho,Canoas",
+  "number_1" ,"Beira-Rio stadium",
+  "number_2", "Airport in Porto Alegre",
+  "number_8","historic market in Porto Alegre",
+  "number_11","Eldorado do Sul",
+  "number_13"," city of Encantado in Rio Grande do Sul",
+  "number_10","Canoas",
+  "number_26"," Salgado Filho International Airport in Porto Alegre in Rio Grande do Sul",
+  "number_27"," Roca Sales in Rio Grande do Sul",
+  "number_28","Roca Sales in Rio Grande do Sul,",
+  "number_29","in Encantado,",
+  "number_31","Lajeado, Rio Grande do Sul state,",
+  "number_","Humaita, in Porto Alegre, Rio Grande do Sul",
+)
+
+lat_longs <- some_addresses |>
+  geocode(addr, method="osm", lat = latitude, lon = longitude, full_results = TRUE)
+
+tidygeocoder::geocode("")
+```
+
+## Gannt Chart
+

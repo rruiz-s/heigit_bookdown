@@ -16,7 +16,26 @@ eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
 ```
 
 # Methodology
-## Data
+
+## Area of Interest
+
+The different study areas were in Rio Grande do Sul, which is located in the southernmost region of Brazil bordered by Uruguay in the south and Argentina to the west. Its total extension of 281.707 km² includes 497 municipalities with 274,390 population exposed to risk areas [@noauthor_caracterizacao_nodate]. The first study area lies between 51º 27'91''W and 50º94'07''W latitude and 30º17'22''S and 29º80'48''S being identified as the dense urban centre 1210 that contains the municipalities of Porto Alegre, Canoas, Cachoeirinha,Alvorada, Gravataí, Esteio,Sapucaia do Sul and Viamão.
+
+
+## Framework
+Three major research phases or lanes constituted the methodology.
+
+1. The first lane defined an area of interest (AOI) 
+can be identified using sources such as Copernicus EMS Rapid Mapping.
+2. The second lane transforms this AOI into a network and graph using
+openrouteservice. Additionally, in this phase called "routable network" lane, the
+post-disaster network is derived through spatial overlay with the extent of flooding.
+3. Lastly, centrality analysis, which includes connectivity and accessibility metrics, is
+conducted on the routable network. This analysis is currently done in R and the
+technical goal is the implementation of PostgreSQL.
+
+![](/media/workflow_methodology.png)
+### Data
 
 ```{r}
 #| echo: false
@@ -41,13 +60,9 @@ DT::datatable(data_df, class='compact', rownames=FALSE, escape= FALSE, caption =
 
 ```
 
-## Framework
+### Import
 
-![](/media/workflow_methodology.png)
-
-## Area of Interest
-
-The tool ogr2ogr imported the data and adjust the geometry according to the recommendations. The recommendation was “pgRouting processes single features more effficiently than multiegeometries, so whenver possible, choose single over multi” mentioned in the book pgrouting.
+The tool ogr2ogr imported the data and adjusted the multilinestring geometry to linestring geometry to process single features more efficiently as recommended @obe_pgrouting_2017.
 
 ```{r}
 #| eval: false

@@ -33,8 +33,8 @@ format:
     code-fold: true
     code-summary: "Show the code"
     theme: 
-      light: journal
-      dark: solar
+      light: [journal, custom.scss]
+      dark: [solar,custom.scss]
   pdf:
     documentclass: scrreprt
   epub:
