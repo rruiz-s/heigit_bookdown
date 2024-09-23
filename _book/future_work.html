@@ -21,6 +21,40 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 </style>
 
 
@@ -161,14 +195,12 @@ ul.task-list li input[type="checkbox"] {
     <h2 id="toc-title">Table of contents</h2>
    
   <ul>
-  <li><a href="#point-of-interest" id="toc-point-of-interest" class="nav-link active" data-scroll-target="#point-of-interest"><span class="header-section-number">5.1</span> Point of interest</a></li>
-  <li><a href="#perforamance" id="toc-perforamance" class="nav-link" data-scroll-target="#perforamance"><span class="header-section-number">5.2</span> Perforamance</a>
+  <li><a href="#point-of-interest-poi" id="toc-point-of-interest-poi" class="nav-link active" data-scroll-target="#point-of-interest-poi"><span class="header-section-number">5.1</span> Point of interest (POI)</a></li>
+  <li><a href="#data" id="toc-data" class="nav-link" data-scroll-target="#data"><span class="header-section-number">5.2</span> Data</a></li>
+  <li><a href="#perforamance" id="toc-perforamance" class="nav-link" data-scroll-target="#perforamance"><span class="header-section-number">5.3</span> Perforamance</a>
   <ul class="collapse">
-  <li><a href="#flood-mask" id="toc-flood-mask" class="nav-link" data-scroll-target="#flood-mask"><span class="header-section-number">5.2.1</span> Flood mask</a></li>
+  <li><a href="#flood-mask" id="toc-flood-mask" class="nav-link" data-scroll-target="#flood-mask"><span class="header-section-number">5.3.1</span> Flood mask</a></li>
   </ul></li>
-  <li><a href="#data" id="toc-data" class="nav-link" data-scroll-target="#data"><span class="header-section-number">5.3</span> Data</a></li>
-  <li><a href="#sampling-points" id="toc-sampling-points" class="nav-link" data-scroll-target="#sampling-points"><span class="header-section-number">5.4</span> Sampling points</a></li>
-  <li><a href="#network" id="toc-network" class="nav-link" data-scroll-target="#network"><span class="header-section-number">5.5</span> Network</a></li>
   </ul>
 </nav>
     </div>
@@ -192,26 +224,38 @@ ul.task-list li input[type="checkbox"] {
 
 </header>
 
-<section id="point-of-interest" class="level2" data-number="5.1">
-<h2 data-number="5.1" class="anchored" data-anchor-id="point-of-interest"><span class="header-section-number">5.1</span> Point of interest</h2>
+<section id="point-of-interest-poi" class="level2" data-number="5.1">
+<h2 data-number="5.1" class="anchored" data-anchor-id="point-of-interest-poi"><span class="header-section-number">5.1</span> Point of interest (POI)</h2>
 </section>
-<section id="perforamance" class="level2" data-number="5.2">
-<h2 data-number="5.2" class="anchored" data-anchor-id="perforamance"><span class="header-section-number">5.2</span> Perforamance</h2>
-<section id="flood-mask" class="level3" data-number="5.2.1">
-<h3 data-number="5.2.1" class="anchored" data-anchor-id="flood-mask"><span class="header-section-number">5.2.1</span> Flood mask</h3>
+<section id="data" class="level2" data-number="5.2">
+<h2 data-number="5.2" class="anchored" data-anchor-id="data"><span class="header-section-number">5.2</span> Data</h2>
+<div class="cell">
+<details>
+<summary>Show the code</summary>
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">data.frame</span>(</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">analysis =</span> <span class="fu">c</span>(<span class="st">"Vulnerability index"</span>),</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">problem =</span><span class="fu">c</span>(<span class="st">"Results and conclussions based on aggregated data can be limited and biased"</span>),</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">suggestion =</span><span class="fu">c</span>(<span class="st">"Find non-spatial data that can be added using municipality, neighbor or sector ID"</span>)</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>             analysis
+1 Vulnerability index
+                                                                      problem
+1 Results and conclussions based on aggregated data can be limited and biased
+                                                                         suggestion
+1 Find non-spatial data that can be added using municipality, neighbor or sector ID</code></pre>
+</div>
+</div>
+</section>
+<section id="perforamance" class="level2" data-number="5.3">
+<h2 data-number="5.3" class="anchored" data-anchor-id="perforamance"><span class="header-section-number">5.3</span> Perforamance</h2>
+<section id="flood-mask" class="level3" data-number="5.3.1">
+<h3 data-number="5.3.1" class="anchored" data-anchor-id="flood-mask"><span class="header-section-number">5.3.1</span> Flood mask</h3>
 <p>Using the dilate and erode method described in the slide 95/187 (<a href="https://cdn2.hubspot.net/hubfs/2283855/PostGIS%20Day%202019%20-%20Overview.pdf">link</a>) could remove small islands that increase the computational costs. A use case of this technique is observed when simplifying coastlines (<a href="https://github.com/rruiz-s/heigit-gima/wiki/2.-Data-preparation#post-scenario">link</a>)</p>
-</section>
-</section>
-<section id="data" class="level2" data-number="5.3">
-<h2 data-number="5.3" class="anchored" data-anchor-id="data"><span class="header-section-number">5.3</span> Data</h2>
-</section>
-<section id="sampling-points" class="level2" data-number="5.4">
-<h2 data-number="5.4" class="anchored" data-anchor-id="sampling-points"><span class="header-section-number">5.4</span> Sampling points</h2>
-</section>
-<section id="network" class="level2" data-number="5.5">
-<h2 data-number="5.5" class="anchored" data-anchor-id="network"><span class="header-section-number">5.5</span> Network</h2>
 
 
+</section>
 </section>
 
 </main> <!-- /main -->
