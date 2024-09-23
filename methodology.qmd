@@ -17,11 +17,6 @@ eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
 
 # Methodology
 
-## Area of Interest
-
-The different study areas were in Rio Grande do Sul, which is located in the southernmost region of Brazil bordered by Uruguay in the south and Argentina to the west. Its total extension of 281.707 km² includes 497 municipalities with 274,390 population exposed to risk areas [@noauthor_caracterizacao_nodate]. The first study area lies between 51º 27'91''W and 50º94'07''W latitude and 30º17'22''S and 29º80'48''S being identified as the dense urban centre 1210 that contains the municipalities of Porto Alegre, Canoas, Cachoeirinha,Alvorada, Gravataí, Esteio,Sapucaia do Sul and Viamão.
-
-
 ## Framework
 Three major research phases or lanes constituted the methodology.
 
@@ -35,7 +30,12 @@ conducted on the routable network. This analysis is currently done in R and the
 technical goal is the implementation of PostgreSQL.
 
 ![](/media/workflow_methodology.png)
-### Data
+
+## Selecting the Area of Interest (AoI) and importing data
+
+The different study areas were in Rio Grande do Sul, which is located in the southernmost region of Brazil bordered by Uruguay in the south and Argentina to the west. Its total extension of 281.707 km² includes 497 municipalities with 274,390 population exposed to risk areas [@noauthor_caracterizacao_nodate].. The first study area lies between 51º 27'91''W and 50º94'07''W latitude and 30º17'22''S and 29º80'48''S being identified as the dense urban centre 1210 according to the GHL-SMOD. This area contains the municipalities of Porto Alegre, Canoas, Cachoeirinha,Alvorada, Gravataí, Esteio,Sapucaia do Sul and Viamão.
+
+###  Data
 
 ```{r}
 #| echo: false
@@ -57,15 +57,16 @@ DT::datatable(data_df, class='compact', rownames=FALSE, escape= FALSE, caption =
     "}")
                                   )
               ) 
-
 ```
 
-### Import
 
-The tool ogr2ogr imported the data and adjusted the multilinestring geometry to linestring geometry to process single features more efficiently as recommended @obe_pgrouting_2017.
+#### Importing data into PostgreSQL
+
+The tool ogr2ogr imported the data into a PostgreSQL database. The output file format parameter -f included the PostgreSQL connection components, while the  parameters -nln and -lco assigned the name of the table and columns respectively. For the OSM network, the parameter -nlt adjusted the multilinestring geometry to linestring to process single features more efficiently as indicated in the bibliography [@obe_pgrouting_2017].
 
 ```{r}
 #| eval: false
+#| code-summary: "PostGIS: Importing data to PostgreSQL using ogr2ogr"
 
 ## OSM geometry: porto_alegre_net_pre.geojson
 ogr2ogr -f PostgreSQL PG:"host=localhost port= 25432 user=docker password=docker dbname=gis schemas=heigit" /home/ricardo/HeiGIT-Github/data_required_porto_alegre/porto_alegre_net_pre.geojson -nln porto_alegre_net_pre -lco GEOMETRY_NAME=the_geom -nlt LINESTRING -explodecollections 
@@ -85,15 +86,157 @@ ogr2ogr -f PostgreSQL PG:"host=localhost port= 25432 user=docker password=docker
 ```
 
 
-### Geometry: OpenStreetMap network (OSM)
+### Preparing the flooding mask
+
+The downloaded flooding extent covered a larger area in Rio Grande do Sul. However, the area of interest that contained urban dense cities such as Porto Alegre was smaller. Therefore, a series of operations reduced the area focusing on Porto Alegre and at the same time improved the query performance.
+
+Subdividing the flooding mask to make the spatial indexes more efficient was the first step. The reason was the higher number of vertices of large objects and larges bounding boxes that hinder the spatial index performance ([Link](https://blog.cleverelephant.ca/2019/11/subdivide.html)). After enabling the spatial indexes, selecting only the flooding subunits that intersected with the area of interest reduced the size of the region query. Previous studies reported that reducing the number of spatial polygons and points of the region saved processing time and computation costs [@zhao_novel_2017]. Additionally, the following code dissolve the borders to break the multipolygon into simple polygons to improve the performance of functions such as st_difference() ([link](https://icarto.es/en/improve-performance-making-the-difference-between-two-layers-with-postgis/)).
+
+```{sql}
+#| eval: false
+#| code-summary: "PostGIS: Subdiving flooding extent and removing slivers"
+
+--- 1) Subdividing to make spatial indexes more efficent
+--- Select the GHS area that intersects with Porto Alegre
+CREATE TABLE flooding_subdivided_porto AS
+WITH porto_alegre_ghs AS(
+    SELECT 
+       ghs.*
+    FROM
+       urban_center_4326 AS ghs
+    JOIN
+       nuts 
+    ON 
+       st_intersects(nuts.geom, ghs.geom)
+    WHERE 
+        nuts.shapename = 'Porto Alegre'),
+--- Bounding Box that contained the GHS in Porto Alegre
+porto_alegre_ghs_bbox AS(
+    SELECT 
+        st_setsrid(st_extent(geom),4326) as geom_bbox
+    FROM 
+        porto_alegre_ghs),
+---Subdivide the flood extent to increase spatial indexes performance 
+flooding_sul_subdivided AS (
+        SELECT 
+            st_subdivide(geom) as the_geom
+        FROM
+            flooding_rio_grande_do_sul) 
+---- Select the flooding subunits that intersects with the previous bounding box
+SELECT 
+    flooding_sul_subdivided.* 
+FROM 
+    flooding_sul_subdivided, 
+    porto_alegre_ghs_bbox
+WHERE 
+    st_intersects(flooding_sul_subdivided.the_geom, porto_alegre_ghs_bbox.geom_bbox);
+--- 2) Simplifying geometry
+CREATE TABLE flooding_cleaned_porto AS
+    SELECT
+        (ST_Dump(the_geom)).geom::geometry(polygon, 4326) geom 
+    FROM 
+        flooding_subdivided_porto;
+    
+CREATE TABLE flooding_cleaned_porto_union AS
+    SELECT
+        ST_Union(geom)::geometry(multipolygon, 4326) geom 
+    FROM 
+        flooding_cleaned_porto;
+    
+CREATE TABLE flooding_cleaned_porto_union_simple AS
+    SELECT 
+        (ST_Dump(geom)).geom::geometry(polygon, 4326) geom 
+    FROM 
+        flooding_cleaned_porto_union;
+--- This allowed to calculate the area of each polygon finding slivers that were removed using the following code. 
+SELECT COUNT(*)
+     FROM flooding_cleaned_porto_union_simple ; --- count= 54.
+
+DELETE FROM 
+  flooding_cleaned_porto_union_simple
+WHERE 
+  ST_Area(geom) < 0.0001; ---count= 2.
+  
+--- Obtain Area
+SELECT 
+  sum(st_area(geom::geography)/10000)::integer 
+FROM  
+  flooding_cleaned_porto_union_simple;
+--- Obtain size in memory
+SELECT 
+  pg_size_pretty(SUM(ST_MemSize(geom))) 
+FROM  
+  flooding_cleaned_porto_union_simple;
+--- Obtain number of points
+SELECT 
+  sum(ST_Npoints(geom)) 
+FROM  
+  flooding_cleaned_porto_union_simple;
+
+```
+
+```{r}
+#| echo: false
+#| code-summary: "R: Representing results in dinamic table "
+
+df_flooding <- data.frame(
+    table = c("flooding_rio_grande_do_sul","flooding_subdivided_porto","flooding_cleaned_porto","flooding_cleaned_porto_union","flooding_cleaned_porto_union_simple"),
+    st_npoints=c(810007,11732,11732,11352,11352),
+    st_memsize=c("13312 kB","191 kB","191 kB","179 kB","181 kB"),
+    st_area=c(709518,44071,44071, 44071,44071)
+)
+DT::datatable(df_flooding, 
+              colnames= c("Table","Nº of points","Size in memory", "Area"),
+              filter="top",
+              class='compact', rownames=FALSE, escape=FALSE, caption='Simplification of the flooding extent',
+              extensions=c("Buttons",'RowGroup'),
+              options=list(
+                  order=list(list(1, 'desc'), list(3,'desc')),
+                  dom="Bfrtip",
+                  initComplete = JS(
+                      "function(settings, json) {",
+                      "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+                      "}")
+              )
+) |> 
+      DT::formatStyle("st_npoints",
+     background=DT::styleColorBar(range(df_flooding$st_npoints), '#ee8b8b'),
+                    backgroundSize='98% 88%',
+                    backgroundRepeat='no-repeat',
+                    backgroundPosition='center') 
+
+```
+
+
+## Obtaining pre and post disaster routable networks
+
+The creation of the network after the disaster using the modified flooding mask and the creation of the origin-destination are considered in this section. The following code set the paremeters before carrying out these transformations following [post 1](https://blog.cleverelephant.ca/2019/05/parallel-postgis-4.html) and [post2](https://gis-ops.com/pgrouting-speedups/).
+
+```{sql}
+#| eval: false
+#| code-summary: "PostGIS: Adjusting configuration settings"
+
+--- Firstly, add spatial index everywhere:
+CREATE INDEX idx_porto_alegre_net_largest_geom ON porto_alegre_net_largest USING gist(the_geom);
+CREATE INDEX idx_porto_alegre_net_largest_source ON porto_alegre_net_largest USING btree(fromid);
+CREATE INDEX idx_porto_alegre_net_largest_target ON porto_alegre_net_largest USING btree(toid);
+CREATE INDEX idx_porto_alegre_net_largest_id ON porto_alegre_net_largest USING btree(ogc_fid);
+CREATE INDEX idx_porto_alegre_net_largest_cost ON porto_alegre_net_largest USING btree(weight);
+--- Set up the configuration
+----- Increase performance by using more max_parallel_workes_per_gather
+SET max_parallel_workers_per_gather =4;
+----- Cluster the index
+CLUSTER porto_alegre_net_largest USING porto_alegre_net_largest;
+```
+
+
+### Importing OpenStreetMap (OSM) network as geometry
 
 The following SQL code created the command to import OpenStreetMap (OSM) network using osmium. Firstly using the [GHS-SMOD dataset](https://human-settlement.emergency.copernicus.eu/download.php?ds=smod) the Global Human Settlement in Porto Alegre is chosen. Secondly, this GHS selected is used to create the bounding box that it is lastly used to generate the osmium code. The OSM network obtained with this osmium command was the input required for OpenRouteService ([ORS](https://heigit.org/introducing-openrouteservice-version-8-0-a-dedication-to-wilfried-juling/)). 
 
 ```{sql}
-#| label: lst-ghs-osmium
-#| lst-label: lst-ghs-osmium
-#| lst-cap: Osmium query generation
 #| eval: false
+#| code-summary: "PostGIS: Generating responsive code to import OSM"
 --- GHS urban area that intersected with Porto Alegre city
 WITH porto_alegre_ghs AS(
 	SELECT 
@@ -129,7 +272,7 @@ FROM porto_alegre_ghs_bbox_osmium_command;
 ```
 
 
-### Graph: OpenRouteService network (ORS)
+### Transforming geometric network into routable graph network using OpenRouteService (ORS).
 
 Firstly, a [docker for OpenRouteService](https://giscience.github.io/openrouteservice/run-instance/running-with-docker) transformed the OSM network that covered the GHS in Porto Alegre into a graph. In the "ors-config.yml" from OpenRotueService (ORS), the "source_file" parameter is set with the following directory. OpenRouteService (ORS) created a a routable network, assigining costs and adding information for each node, namely, "fromId" and "toId". The R script "get_graph" from Marcel Reinmuth exported the ORS network named as "porto_alegre_net".
 
@@ -137,6 +280,7 @@ Secondly, the parameters start_vid, end_vid named "fromid" and "toid" in the net
 
 ```{sql}
 #| eval: false
+#| code-summary: "PostGIS: Adjusting ORS configuration & preparation for pgrouting"
 --- Firstly, the source_file parameter in the ors.config.yml file is set to the OSM network previously obtained 
 source_file: /home/ors/files/puerto_alegre_urban_center.osm.pbf
 ---- Secondly the exported ORS graph is prepared for pgrouting casting the right data type for the pgrouting functions.
@@ -151,6 +295,7 @@ ALTER TABLE porto_alegre_net_pre
 ```{r}
 #| warning: false
 #| message: false
+#| code-summary: "R: Visualizing OSM and ORS network"
 
 ## Load data
 ors_network <- st_read(eisenberg_connection, layer="porto_alegre_net_pre")
@@ -183,12 +328,14 @@ m2 <- mapview(intersection_ors,
               popup=popupTable(intersection_ors))
 sync(m1,m2) 
 ```
-##### Inspection of ORS graph network
+
+### Exploring ORS graph network and components
 
 Before using the graph, a quick inspection of the graph using the pgrouting function [*pgr_strongComponents()*](https://docs.pgrouting.org/dev/en/pgr_strongComponents.html) revealed how many components or isolated self-connecting network the graph had.  The largest network component is selected using the length. The following code created a table with the different components and another table containing the largest component ruling out the rest of the components with relatively small networks.
 
 ```{sql}
 #| eval: false
+#| code-summary: "PostGIS: Obtaining components of the network and their length"
 --- 1) Quick inspection of the graph to determine components
 ---- Create a vertice table for pgr_dijkstra()
 SELECT 
@@ -271,6 +418,7 @@ WHERE
 
 ```{r}
 #| eval: false
+#| code-summary: "R: Visualizing the three longest component"
 
 component_analysis_network <- st_read(eisenberg_connection, "component_analysis_network_porto")
 ## Select top 3
@@ -280,19 +428,19 @@ component_analysis_network_3$component  <- component_analysis_network_3$componen
 ## Visualization
 m1_net <- component_analysis_network_3 |>
               filter(component=="1") |>
-              mapview(layer.name = "1st Longest Network",
+              mapview(layer.name = "1st Longest component",
                       lwd= 0.5,
                       color="#66c2a5")
 
 m2_net <- component_analysis_network_3 |> 
               filter(component=="3728") |>
-              mapview(layer.name = "2nd Longest Network",
+              mapview(layer.name = "2nd Longest component",
                       color ="#8da0cb",
                       lwd=0.5)
 
 m3_net <- component_analysis_network_3 |>
               filter(component=="40578") |>
-              mapview(layer.name = "3rd Longest Network",
+              mapview(layer.name = "3rd Longest component",
                       color="#fc8d62",
                       lwd =0.5)
 
@@ -301,198 +449,58 @@ m1_net + m2_net + m3_net
 ```
 
 
-### Flooding mask
-
-The downloaded flooding extent covered a larger area in Rio Grande do Sul. However, our area of interest for urban dense city was only Porto Alegre. Therefore, a serie of operations reduced the area focusing on Porto Alegre and at the same time improved the performance reducing the size of the mask.
-
-Subdividing the flooding mask to make the spatial indexes more efficient was the first step. The reason was the higher number of vertices of large objects and larges bounding boxes that hinder the spatial index performance ([Link](https://blog.cleverelephant.ca/2019/11/subdivide.html)). After the spatial indexes were enable, the intersection with the Porto Alegre region subset the data. Additionally, the following code dissolve the borders to break the multipolygon into simple polygons to improve the performance of functions such as st_difference() ([link](https://icarto.es/en/improve-performance-making-the-difference-between-two-layers-with-postgis/)).
-
-```{sql}
-#| eval: false
-
---- 1) Subdividing to make spatial indexes more efficent
---- Select the GHS area that intersects with Porto Alegre
-CREATE TABLE flooding_subdivided_porto AS
-WITH porto_alegre_ghs AS(
-    SELECT 
-       ghs.*
-    FROM
-       urban_center_4326 AS ghs
-    JOIN
-       nuts 
-    ON 
-       st_intersects(nuts.geom, ghs.geom)
-    WHERE 
-        nuts.shapename = 'Porto Alegre'),
---- Bounding Box that contained the GHS in Porto Alegre
-porto_alegre_ghs_bbox AS(
-    SELECT 
-        st_setsrid(st_extent(geom),4326) as geom_bbox
-    FROM 
-        porto_alegre_ghs),
----Subdivide the flood extent to increase spatial indexes performance 
-flooding_sul_subdivided AS (
-        SELECT 
-            st_subdivide(geom) as the_geom
-        FROM
-            flooding_rio_grande_do_sul) 
----- Select the flooding subunits that intersects with the previous bounding box
-SELECT 
-    flooding_sul_subdivided.* 
-FROM 
-    flooding_sul_subdivided, 
-    porto_alegre_ghs_bbox
-WHERE 
-    st_intersects(flooding_sul_subdivided.the_geom, porto_alegre_ghs_bbox.geom_bbox);
---- 2) Simplifying geometry
-CREATE TABLE flooding_cleaned_porto AS
-    SELECT
-        (ST_Dump(the_geom)).geom::geometry(polygon, 4326) geom 
-    FROM 
-        flooding_subdivided_porto;
-    
-CREATE TABLE flooding_cleaned_porto_union AS
-    SELECT
-        ST_Union(geom)::geometry(multipolygon, 4326) geom 
-    FROM 
-        flooding_cleaned_porto;
-    
-CREATE TABLE flooding_cleaned_porto_union_simple AS
-    SELECT 
-        (ST_Dump(geom)).geom::geometry(polygon, 4326) geom 
-    FROM 
-        flooding_cleaned_porto_union;
---- This allowed to calculate the area of each polygon finding slivers that were removed using the following code. 
-SELECT COUNT(*)
-     FROM flooding_cleaned_porto_union_simple ; --- count= 54.
-
-DELETE FROM 
-  flooding_cleaned_porto_union_simple
-WHERE 
-  ST_Area(geom) < 0.0001; ---count= 2.
-
-```
-
-```{r}
-#| echo: false
-
-df_flooding <- data.frame(
-    table = c("flooding_rio_grande_do_sul","flooding_subdivided_porto","flooding_cleaned_porto","flooding_cleaned_porto_union","flooding_cleaned_porto_union_simple"),
-    st_npoints=c(810007,11732,11732,11352,11352),
-    st_memsize=c("13312 kB","191 kB","191 kB","179 kB","181 kB"),
-    st_area=c(709518,44071,44071, 44071,44071)
-)
-DT::datatable(df_flooding, 
-              colnames= c("Table","Nº of points","Size in memory", "Area"),
-              filter="top",
-              class='compact', rownames=FALSE, escape=FALSE, caption='Simplification of the flooding extent',
-              extensions=c("Buttons",'RowGroup'),
-              options=list(
-                  order=list(list(1, 'desc'), list(3,'desc')),
-                  dom="Bfrtip",
-                  initComplete = JS(
-                      "function(settings, json) {",
-                      "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
-                      "}")
-              )
-) |> 
-      DT::formatStyle("st_npoints",
-     background=DT::styleColorBar(range(df_flooding$st_npoints), '#ee8b8b'),
-                    backgroundSize='98% 88%',
-                    backgroundRepeat='no-repeat',
-                    backgroundPosition='center') 
-
-```
-
-
-```{sql}
-#| eval: false
-
-## Obtain Area
-SELECT 
-  sum(st_area(geom::geography)/10000)::integer 
-FROM  
-  flooding_cleaned_porto_union_simple;
-## Obtain size in memory
-SELECT 
-  pg_size_pretty(SUM(ST_MemSize(geom))) 
-FROM  
-  flooding_cleaned_porto_union_simple;
-## Obtain number of points
-SELECT 
-  sum(ST_Npoints(geom)) 
-FROM  
-  flooding_cleaned_porto_union_simple;
-```
-
-## Routable network
-
-The creation of the network after the disaster using the modified flooding mask and the creation of the origin-destination are considered in this section. The following code set the paremeters before carrying out these transformations following [post 1](https://blog.cleverelephant.ca/2019/05/parallel-postgis-4.html) and [post2](https://gis-ops.com/pgrouting-speedups/).
-
-```{sql}
-#| eval: false
-
---- Firstly, add spatial index everywhere:
-CREATE INDEX idx_porto_alegre_net_largest_geom ON porto_alegre_net_largest USING gist(the_geom);
-CREATE INDEX idx_porto_alegre_net_largest_source ON porto_alegre_net_largest USING btree(fromid);
-CREATE INDEX idx_porto_alegre_net_largest_target ON porto_alegre_net_largest USING btree(toid);
-CREATE INDEX idx_porto_alegre_net_largest_id ON porto_alegre_net_largest USING btree(ogc_fid);
-CREATE INDEX idx_porto_alegre_net_largest_cost ON porto_alegre_net_largest USING btree(weight);
---- Set up the configuration
------ Increase performance by using more max_parallel_workes_per_gather
-SET max_parallel_workers_per_gather =4;
------ Cluster the index
-CLUSTER porto_alegre_net_largest USING porto_alegre_net_largest;
-```
 
 #### Pre-Disaster network
 
 ```{sql}
 #| eval: false
+#| code-summary: "PostGIS: Creating the pre-disaster network filtering out components"
 
 CREATE TABLE porto_alegre_net_largest AS
 ---- Obtain again table classifying nodes in different components		    
-WITH porto_alegre_net_component AS (
-SELECT 
-  * 
-FROM 
-  pgr_strongComponents('SELECT id,
+  WITH porto_alegre_net_component AS (
+    SELECT 
+      * 
+    FROM 
+      pgr_strongComponents('SELECT id,
                                source,
                                target,
                                cost 
-                        FROM 
+                            FROM 
                               porto_alegre_net_pre')),
 --- Calculate the largest component from the network
-largest_component_net AS (
-	SELECT 
-		component
-	FROM 
-	 	component_analysis_network_porto 
-	LIMIT 1),
+  largest_component_net AS (
+	  SELECT 
+		  component
+	  FROM 
+	 	  component_analysis_network_porto 
+	  LIMIT 1),
 --- Using the largest component from the network to filter
-largeset_component_network_porto AS (
-SELECT
-	*  
-FROM
-	porto_alegre_net_component,
-	largest_component_net
-WHERE 
-	porto_alegre_net_component.component = largest_component_net.component)
-SELECT 
-	net_multi_component.*
-FROM 
-	porto_alegre_net_pre AS net_multi_component,
-	largeset_component_network_porto AS net_largest_component
-WHERE  
-	net_multi_component.source IN (net_largest_component.node);
+  largeset_component_network_porto AS (
+    SELECT
+	    *  
+    FROM
+	    porto_alegre_net_component,
+	  largest_component_net
+    WHERE 
+	    porto_alegre_net_component.component = largest_component_net.component)
+    SELECT 
+	    net_multi_component.*
+    FROM 
+	    porto_alegre_net_pre AS net_multi_component,
+	    largeset_component_network_porto AS net_largest_component
+    WHERE  
+	    net_multi_component.source IN (net_largest_component.node);
 ```
 
 #### Post-Disaster network
 
-A naive approach overlaying the flooding mask with the road network by the function *st_difference()* caused the session to crash.  The follwing multi-step methodology reduced the processing cost making the query feasible using less resources. Firstly the network inside the flooding mask is selected. Secondly, a subset of the network outside the flooding mask avoided using spatial operations saving computing resources by using the ID's from the network inside the flooding to filter the data.Thirdly, to obtain the boundaries between the inside and outside network, the geometry is converted into its exterior ring. From this network on the boundary, only the exterior part that intersected with the outside boundary was selected.   
+A naive approach overlaying the flooding mask with the road network by the function *st_difference()* crashed the session.  The follwing multi-step methodology reduced the processing cost making the query feasible using less resources by incorporating boolean operators in some steps. In other studies, decomposing difference function queries using boolean operators reported an increase on the performance of 223% in PostgreSQL [@gruca_spatial_2014]. Firstly the network inside the flooding mask is selected. Secondly, a subset of the network outside the flooding mask avoided using spatial operations saving computing resources by using the ID's from the network inside the flooding to filter the data.Thirdly, to obtain the boundaries between the inside and outside network, the geometry is converted into its exterior ring. From this network on the boundary, only the exterior part that intersected with the outside boundary was selected.   
 
 ```{sql}
 #| eval: false
+#| code-summary: "PostGIS: Multi-step methodology to create the post-disaster network"
+
 --- 1) Network inside the flooding mask
 CREATE TABLE porto_alegre_street_in_v2 AS
 SELECT net.id,
@@ -607,6 +615,7 @@ FROM difference_outside_flood_v3;
 
 ```{r}
 #| eval: false
+#| code-summary: "R: Visualizing the multi-step methodology"
 porto_alegre_net_pre <- sf::st_read(eisenberg_connection, "porto_alegre_net_largest")
 centrality_pre <- sf::st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
 flooding <- sf::st_read(eisenberg_connection, "flooding_cleaned_porto")
@@ -659,23 +668,11 @@ mapview(subset_network_pre,
 <iframe width="760" height="500" src="/media/network_post_creation.html" title = "Methodology to create post-flooding network "></iframe>
 ```
 
-```{sql}
-#| eval: false
-#| connection: eisenberg_connection
-
-SELECT pgr_createVerticesTable(
-            'porto_alegre_net_largest',
-            the_geom:= 'the_geom',
-            source:= 'fromid',
-            target:= 'toid')
-```
-
-
-
 ### Post-scenario
 
 ```{sql}
 #| eval: false
+#| code-summary: "PostGIS: Creating the post-disaster network"
 
 ---- Create vertices
 SELECT pgr_createverticesTable('porto_alegre_net_post_v5');
@@ -843,11 +840,11 @@ VACUUM(full, ANALYZE) porto_alegre_net_largest;
 ```
 
 
-## Centrality Analysis
+## Measuring centrality on networks
 
-### Origin-Destination
+### Generating Origin-Destination
 
-#### Regular distribution (naive)
+#### Sampling using regular distribution
 
 A series of regular points that represented the origin and destination on the Area of Interest is created with the function  ["I_Grid_Point_Series"](https://gis.stackexchange.com/questions/4663/creating-regular-point-grid-inside-polygon-in-postgis).
 
@@ -858,6 +855,8 @@ Apart from indexing the geometry column and the id, the query is constrained to 
 
 ```{sql}
 #| eval: false
+#| code-summary: "PostGIS: Creating a function to sample regularly"
+
 --- Creating the function that sample regularly:
 CREATE OR REPLACE FUNCTION I_Grid_Point_Series(geom geometry, x_side decimal, y_side decimal, spheroid boolean default false)
 RETURNS SETOF geometry AS $BODY$
@@ -919,12 +918,13 @@ CREATE INDEX idx_regular_point_od_geom ON regular_point_od USING GIST (geom);
 CREATE INDEX idx_regular_point_od_id ON regular_point_od USING btree(id);
 ```
 
-#### Weighted on building volume
+#### Sampling using weighted distribution
 
 In R...
 
 ```{r}
 #| eval: false 
+#| code-summary: "R: Weighted sampling based on the built up density"
 
 # Import data
 ## raster
@@ -949,6 +949,7 @@ Snap the points
 
 ```{sql}
 #| eval: false
+#| code-summary: "PostGIS: Snapping samples to the closest node"
 #| connection: eisenberg_connection
 
 --- Create ID column
@@ -1059,10 +1060,11 @@ LATERAL (SELECT
 
 ```
 
-#### Hospitals
+#### Selecting point of interest (Hospitals)
 
 ```{sql}
 #| eval: false
+#| code-summary: "PostGIS: Selecting hospistals in the AoI and snapping"
 
 --- Create a table with the bounding box that contains Porto Alegre + GHS
 CREATE TABLE porto_alegre_bbox AS
@@ -1127,6 +1129,7 @@ CREATE INDEX idx_hospital_rs_node_v2 ON hospital_rs_node_v2 USING btree(id);
 ```{r}
 #| message: false
 #| warning: false
+#| code-summary: "R: Visualizing regular and weighted sampling"
 #| eval: false
 
 ## Crop and Reproject
@@ -1197,10 +1200,12 @@ mapview(subset(poi_hospital,
 
 ```
 
-### Edge betweenness
+### Calculating Sum Edge Betweenness
 
 ```{sql}
 #| eval: false
+#| code-summary: "PostGIS: Calculating edge betweenness centrality on the pre-disaster network"
+
 --- Pre-scenario
  CREATE TABLE centrality_100_100_dijkstra AS
  SELECT   b.id,
@@ -1276,6 +1281,7 @@ on
 
 ```{sql}
 #| eval: false
+#| code-summary: "PostGIS: Calculating edge betweenness centrality on the post-disaster network"
 
 --- Post scenario
 
@@ -1352,7 +1358,9 @@ on
 
 ```{sql}
 #| eval: false
----- POST-EVENT
+#| code-summary: "PostGIS: Calculating edge betweenness centrality for each hospital" 
+
+--- POST-EVENT
 CREATE TABLE weight_sampling_454_origin_post  AS
 WITH porto_454_origin_post AS (
         SELECT
@@ -1541,10 +1549,12 @@ SELECT * FROM vertices;
 ```
 
 
-#### Closeness
+### Calculating closeness
 
 ```{sql}
 #| eval: false
+#| code-summary: "PostGIS: Calculating closenness centrality"
+
 ---- Pre-Event
 CREATE TABLE clossness_hospital_porto AS 
 WITH dijkstra_cost AS (
@@ -1614,8 +1624,8 @@ LEFT JOIN
 
 ```
 
-#### Vulnerability: Socioeconomic indicators
+### Assesing vulnerability based on socioeconomic indicators
 
-#### Resiliance:
+## Verifying results
 
 

@@ -1,5 +1,9 @@
 # Results
 
+Key variables:
+- Centrality ---> vulnerability-resilience
+- Accessibility ----> vulnerability-resilience
+
 ```{r}
 #| echo: false
 #| output: false
