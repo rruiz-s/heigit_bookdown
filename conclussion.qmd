@@ -9,12 +9,6 @@ lapply(c("tidyverse","DT","leaflet","sf"),
 ```
 
 # Conclussion
-## Framework
-## Data
-
-```{r}
-
-```
-
-## Sampling points
-## Network
+Key variables:
+- Centrality ---> vulnerability-resilience
+- Accessibility ----> vulnerability-resilience

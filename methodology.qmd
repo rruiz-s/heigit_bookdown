@@ -1,3 +1,9 @@
+---
+editor: 
+  markdown: 
+    wrap: 72
+---
+
 ```{r}
 #| echo: false
 #| output: false
@@ -15,27 +21,46 @@ eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
 
 ```
 
+
 # Methodology
 
-## Framework
-Three major research phases or lanes constituted the methodology.
+## Technical design
+### Research strategy
 
-1. The first lane defined an area of interest (AOI) 
-can be identified using sources such as Copernicus EMS Rapid Mapping.
-2. The second lane transforms this AOI into a network and graph using
-openrouteservice. Additionally, in this phase called "routable network" lane, the
-post-disaster network is derived through spatial overlay with the extent of flooding.
-3. Lastly, centrality analysis, which includes connectivity and accessibility metrics, is
-conducted on the routable network. This analysis is currently done in R and the
-technical goal is the implementation of PostgreSQL.
+A quantitative analysis of the road connectivity and access to
+healthcare facilities before and after a flooding event identified the
+temporal patterns of changes on centrality metrics. This was based on the case study of Rio Grande do Sul floodings that took place in late April 2024. The spatial pattern of the flooding shown that some regions were more vulnerable than others. Lastly, an assessment of different pathways to
+the healthcare facilities contributed to take an informed decision on
+which areas are more critical to avoid the disruption of healthcare
+access facilitating urban resilience.
+
+Therefore, this practical-orientated research aim to make a diagnosis of the occurred flooding in Rio Grande do Sul to identifying the potential critical infrastructures necessary for accessing healthcare facilities that could improve the urban resilience against future floodings.  
+
+
+### Research planning
+
+To address the diagnosis of the loss of centrality by the flooding, the methodological approach is segmented into three major lanes that constituted the workflow of this research.
+
+1.  The first lane, selection of the Area Of Interested (AOI),  defined the study area based on the
+    flooding extent reported by the Universidade Federal do Rio Grande
+    do Sul and imported the OSM network geometry using osmium.
+2.  The second lane, routable network, transformed the OSM network geometry into a routable graph        network using OpenRoutService. Additionally, the post-disaster network is derived through spatial
+    overlay with the extent of flooding.
+3.  The third lane,centrality analysis , connectivity and
+    accessibility metrics identified critical infrastructure. 
+
+The method is based on PostgreSQL using the extensions PostGIS and
+Pgrouting. In the context of emergency management, the spatial database
+PostGIS and the library of functions Pgrouting proved to be useful
+developing emergency notifications [@hataitara_development_2024] or
+finding dynamic shortest simulating obstruction of the network by floods
+[@singh_dynamic_2015], [@choosumrong_development_2019].
 
 ![](/media/workflow_methodology.png)
 
-## Selecting the Area of Interest (AoI) and importing data
+### Research material
 
-The different study areas were in Rio Grande do Sul, which is located in the southernmost region of Brazil bordered by Uruguay in the south and Argentina to the west. Its total extension of 281.707 km² includes 497 municipalities with 274,390 population exposed to risk areas [@noauthor_caracterizacao_nodate].. The first study area lies between 51º 27'91''W and 50º94'07''W latitude and 30º17'22''S and 29º80'48''S being identified as the dense urban centre 1210 according to the GHL-SMOD. This area contains the municipalities of Porto Alegre, Canoas, Cachoeirinha,Alvorada, Gravataí, Esteio,Sapucaia do Sul and Viamão.
-
-###  Data
+The before and after flooding networks are obtained using the OSM network from Geofabrik and the flooding extent from Universidad de Rio Grande do Sul. Regarding the location of the hospitals, the Geoportal de Rio Grande do Sul and OSM offered this data. From this material, the PostGIS and OpenRouteService Docker set up the environment required to conduct the centrality analysis. Moreover, the Global Settlement Layer-SMOD classified the different cities to select the AOI, while the Global Settlement -Bult-V added different weights used in the origin-destination sampling. This research material is shown in the table.
 
 ```{r}
 #| echo: false
@@ -46,7 +71,7 @@ data_df <- read_csv('/home/ricardo/HeiGIT-Github/data_required_porto_alegre/requ
 
 data_df$Link <-  paste0('<a href="', data_df$Link ,'">', 'Link </a>')
 
-DT::datatable(data_df, class='compact', rownames=FALSE, escape= FALSE, caption = 'Data description',
+DT::datatable(subset(data_df, select=c("Description","Data Type","File","Link")), class='compact', rownames=FALSE, escape= FALSE, caption = 'Material gathered for the research',
               extensions="Buttons",
                          options=list(
                            dom="Bfrtip",
@@ -59,10 +84,26 @@ DT::datatable(data_df, class='compact', rownames=FALSE, escape= FALSE, caption =
               ) 
 ```
 
+# Methodology
+## Selecting the Area of Interest (AoI) and importing data
 
-#### Importing data into PostgreSQL
+PostGIS queries obtained the Area of Interest calculating the bounding
+box from the flooding extent provided by the Universidade Federal do Rio
+Grande do Sul. Likewise, PostGIS queries prepared the flooding extent
+for the analysis subdividing the layer and removing slivers. Having
+obtained the area of interest, the C++/Javascript framework osmium
+[@barron_comprehensive_2014] processed the OSM data obtaining the
+geometry of the network.
 
-The tool ogr2ogr imported the data into a PostgreSQL database. The output file format parameter -f included the PostgreSQL connection components, while the  parameters -nln and -lco assigned the name of the table and columns respectively. For the OSM network, the parameter -nlt adjusted the multilinestring geometry to linestring to process single features more efficiently as indicated in the bibliography [@obe_pgrouting_2017].
+### Importing data into PostgreSQL
+
+The tool ogr2ogr imported the data into a PostgreSQL database. The
+output file format parameter -f included the PostgreSQL connection
+components, while the parameters -nln and -lco assigned the name of the
+table and columns respectively. For the OSM network, the parameter -nlt
+adjusted the multilinestring geometry to linestring to process single
+features more efficiently as indicated in the bibliography
+[@obe_pgrouting_2017].
 
 ```{r}
 #| eval: false
@@ -85,12 +126,30 @@ ogr2ogr -f PostgreSQL PG:"host=localhost port= 25432 user=docker password=docker
 ogr2ogr -f PostgreSQL PG:"host=localhost port= 25432 user=docker password=docker dbname=gis schemas=heigit" /home/ricardo/HeiGIT-Github/data_required_porto_alegre/Hospitais_com_Leitos_de_UTIs_no_RS.geojson -nln hospitals_bed_rs -lco GEOMETRY_NAME=geom
 ```
 
-
 ### Preparing the flooding mask
 
-The downloaded flooding extent covered a larger area in Rio Grande do Sul. However, the area of interest that contained urban dense cities such as Porto Alegre was smaller. Therefore, a series of operations reduced the area focusing on Porto Alegre and at the same time improved the query performance.
+The downloaded flooding extent covered a larger area in Rio Grande do
+Sul. However, the area of interest that contained urban dense cities
+such as Porto Alegre was smaller. Therefore, a series of operations
+reduced the area focusing on Porto Alegre and at the same time improved
+the query performance.
 
-Subdividing the flooding mask to make the spatial indexes more efficient was the first step. The reason was the higher number of vertices of large objects and larges bounding boxes that hinder the spatial index performance ([Link](https://blog.cleverelephant.ca/2019/11/subdivide.html)). After enabling the spatial indexes, selecting only the flooding subunits that intersected with the area of interest reduced the size of the region query. Previous studies reported that reducing the number of spatial polygons and points of the region saved processing time and computation costs [@zhao_novel_2017]. Additionally, the following code dissolve the borders to break the multipolygon into simple polygons to improve the performance of functions such as st_difference() ([link](https://icarto.es/en/improve-performance-making-the-difference-between-two-layers-with-postgis/)).
+Subdividing the flooding mask to make the spatial indexes more efficient
+was the first step. The reason was the higher number of vertices of
+large objects and larges bounding boxes that hinder the spatial index
+performance
+([Link](https://blog.cleverelephant.ca/2019/11/subdivide.html)). After
+enabling the spatial indexes, selecting only the flooding subunits that
+intersected with the area of interest reduced the size of the region
+query. Previous studies reported that reducing the number of spatial
+polygons and points of the region saved processing time and computation
+costs [@zhao_novel_2017]. Additionally, the following code dissolved the
+borders to break the multipolygon into simple polygons to improve the
+performance of functions such as st_difference() and removed slivers
+polygons. Based on size criteria, the calculated area of these
+undesirable polygons identified the slivers of the flooding extent
+[@grippa_mapping_2018].
+([link](https://icarto.es/en/improve-performance-making-the-difference-between-two-layers-with-postgis/)).
 
 ```{sql}
 #| eval: false
@@ -207,37 +266,43 @@ DT::datatable(df_flooding,
 
 ```
 
-
 ## Obtaining pre and post disaster routable networks
 
-The creation of the network after the disaster using the modified flooding mask and the creation of the origin-destination are considered in this section. The following code set the paremeters before carrying out these transformations following [post 1](https://blog.cleverelephant.ca/2019/05/parallel-postgis-4.html) and [post2](https://gis-ops.com/pgrouting-speedups/).
+The creation of the network after the disaster using the modified
+flooding mask and the creation of the origin-destination are considered
+in this section. Before generating these routable networks, the following code set configuration parameters, recommended to deliver faster results [@10.5120/18602-9881].
 
 ```{sql}
 #| eval: false
 #| code-summary: "PostGIS: Adjusting configuration settings"
+--- Set up the configuration
+----- Increase performance by using more max_parallel_workes_per_gather (https://blog.cleverelephant.ca/2019/05/parallel-postgis-4.html)
+SET max_parallel_workers_per_gather =4;
+----- Cluster the index (https://gis-ops.com/pgrouting-speedups/)
+CLUSTER porto_alegre_net_largest USING porto_alegre_net_largest;
+```
 
---- Firstly, add spatial index everywhere:
+### Importing OpenStreetMap (OSM) network as geometry
+
+The following SQL code created the command to import OpenStreetMap (OSM)
+network using osmium. After creating the spatial index on the network table, the [GHS-SMOD
+dataset](https://human-settlement.emergency.copernicus.eu/download.php?ds=smod)
+the Global Human Settlement that intersected with Porto Alegre is selected as AOI. Secondly, this
+GHS is used to dynaically generate the bounding box and command line required by osmium. The OSM network obtained with this osmium
+command was the input required for OpenRouteService
+([ORS](https://heigit.org/introducing-openrouteservice-version-8-0-a-dedication-to-wilfried-juling/)).
+
+```{sql}
+#| eval: false
+#| code-summary: "PostGIS: Generating responsive code to import OSM"
+
+--- 0) Add spatial index everywhere:
 CREATE INDEX idx_porto_alegre_net_largest_geom ON porto_alegre_net_largest USING gist(the_geom);
 CREATE INDEX idx_porto_alegre_net_largest_source ON porto_alegre_net_largest USING btree(fromid);
 CREATE INDEX idx_porto_alegre_net_largest_target ON porto_alegre_net_largest USING btree(toid);
 CREATE INDEX idx_porto_alegre_net_largest_id ON porto_alegre_net_largest USING btree(ogc_fid);
 CREATE INDEX idx_porto_alegre_net_largest_cost ON porto_alegre_net_largest USING btree(weight);
---- Set up the configuration
------ Increase performance by using more max_parallel_workes_per_gather
-SET max_parallel_workers_per_gather =4;
------ Cluster the index
-CLUSTER porto_alegre_net_largest USING porto_alegre_net_largest;
-```
-
-
-### Importing OpenStreetMap (OSM) network as geometry
-
-The following SQL code created the command to import OpenStreetMap (OSM) network using osmium. Firstly using the [GHS-SMOD dataset](https://human-settlement.emergency.copernicus.eu/download.php?ds=smod) the Global Human Settlement in Porto Alegre is chosen. Secondly, this GHS selected is used to create the bounding box that it is lastly used to generate the osmium code. The OSM network obtained with this osmium command was the input required for OpenRouteService ([ORS](https://heigit.org/introducing-openrouteservice-version-8-0-a-dedication-to-wilfried-juling/)). 
-
-```{sql}
-#| eval: false
-#| code-summary: "PostGIS: Generating responsive code to import OSM"
---- GHS urban area that intersected with Porto Alegre city
+--- 1) GHS urban area that intersected with Porto Alegre city
 WITH porto_alegre_ghs AS(
 	SELECT 
 	   ghs.*
@@ -255,7 +320,7 @@ porto_alegre_ghs_bbox AS(
 		st_setsrid(st_extent(geom),4326) as geom_bbox
 	FROM 
 		porto_alegre_ghs),
---- The command used the Porto Alegre GHS and its Bounding Box to import the OpenStreet Network. 
+--- 2) The command used the Porto Alegre GHS and its Bounding Box to import the OpenStreet Network. 
 porto_alegre_ghs_bbox_osmium_command AS	(
 	SELECT 
 		ST_XMin(ST_SnapToGrid(geom_bbox, 0.0001)) AS min_lon,
@@ -271,19 +336,29 @@ FROM porto_alegre_ghs_bbox_osmium_command;
 
 ```
 
-
 ### Transforming geometric network into routable graph network using OpenRouteService (ORS).
 
-Firstly, a [docker for OpenRouteService](https://giscience.github.io/openrouteservice/run-instance/running-with-docker) transformed the OSM network that covered the GHS in Porto Alegre into a graph. In the "ors-config.yml" from OpenRotueService (ORS), the "source_file" parameter is set with the following directory. OpenRouteService (ORS) created a a routable network, assigining costs and adding information for each node, namely, "fromId" and "toId". The R script "get_graph" from Marcel Reinmuth exported the ORS network named as "porto_alegre_net".
+Firstly, running the [docker for
+OpenRouteService](https://giscience.github.io/openrouteservice/run-instance/running-with-docker)
+transformed the OSM network from the GHS AoI into a
+graph. In the "ors-config.yml" from OpenRotueService (ORS), the
+"source_file" parameter is set to find the directory that contained the OSM geometry network.
+OpenRouteService (ORS) created a a routable network assigining costs
+and adding information for each node such as the origin, "fromId", and the destination, "toId". The R
+script "get_graph" from Marcel Reinmuth exported the ORS network named
+as "porto_alegre_net".
 
-Secondly, the parameters start_vid, end_vid named "fromid" and "toid" in the network dataset from openrouteservice are transform into bigint data type to run the algorithm pgr_dijkstra as the [official documentation](https://docs.pgrouting.org/latest/en/pgr_dijkstra.html) indicates.  
+Secondly, the data type of the columns "fromid" and "toid" in
+the network dataset from openrouteservice are transform into bigint to run the algorithm pgr_dijkstra as the [official
+documentation](https://docs.pgrouting.org/latest/en/pgr_dijkstra.html)
+indicated.
 
 ```{sql}
 #| eval: false
 #| code-summary: "PostGIS: Adjusting ORS configuration & preparation for pgrouting"
---- Firstly, the source_file parameter in the ors.config.yml file is set to the OSM network previously obtained 
+--- 1) the source_file parameter in the ors.config.yml file is set to find the imported OSM network 
 source_file: /home/ors/files/puerto_alegre_urban_center.osm.pbf
----- Secondly the exported ORS graph is prepared for pgrouting casting the right data type for the pgrouting functions.
+---- 2)  The exported ORS graph is prepared for pgrouting casting the right data type for the pgrouting functions.
 select * from porto_alegre_net_pre; 
 ALTER TABLE porto_alegre_net_pre 
 	ALTER COLUMN "toid" type bigint,
@@ -291,11 +366,10 @@ ALTER TABLE porto_alegre_net_pre
 	ALTER COLUMN "ogc_fid" type bigint;
 ```
 
-
 ```{r}
 #| warning: false
 #| message: false
-#| code-summary: "R: Visualizing OSM and ORS network"
+#| code-summary: "R: Visualizing OSM and ORS network with Mapview"
 
 ## Load data
 ors_network <- st_read(eisenberg_connection, layer="porto_alegre_net_pre")
@@ -331,7 +405,13 @@ sync(m1,m2)
 
 ### Exploring ORS graph network and components
 
-Before using the graph, a quick inspection of the graph using the pgrouting function [*pgr_strongComponents()*](https://docs.pgrouting.org/dev/en/pgr_strongComponents.html) revealed how many components or isolated self-connecting network the graph had.  The largest network component is selected using the length. The following code created a table with the different components and another table containing the largest component ruling out the rest of the components with relatively small networks.
+Before using the graph network, a quick inspection using the
+pgrouting function
+[*pgr_strongComponents()*](https://docs.pgrouting.org/dev/en/pgr_strongComponents.html)
+revealed the number of components or isolated self-connecting networks within the
+graph. The largest network component is selected using its length.
+The following code created a table with the different components and
+another table containing the largest component. The reason to discard the rest of components was its relatively small size and based on the observation that these components were appeared next to OSM objects categorized as "barriers", which was assumed as private properties not relevant for emergency response.   
 
 ```{sql}
 #| eval: false
@@ -410,11 +490,9 @@ WHERE
     net_multi_component.fromid IN (net_largest_component.node);
 ```
 
-
 ```{=html}
 <iframe width="760" height="500" src="/media/network_components_three.html" title = "Inspect of the components in the graph network "></iframe>
 ```
-
 
 ```{r}
 #| eval: false
@@ -436,21 +514,23 @@ m2_net <- component_analysis_network_3 |>
               filter(component=="3728") |>
               mapview(layer.name = "2nd Longest component",
                       color ="#8da0cb",
-                      lwd=0.5)
+                      lwd=2,
+                      popup= popupTable(component_analysis_network_3[component_analysis_network_3$component ==37278,] ,
+                                        zcol=(c("component","distance"))))
 
 m3_net <- component_analysis_network_3 |>
               filter(component=="40578") |>
               mapview(layer.name = "3rd Longest component",
                       color="#fc8d62",
-                      lwd =0.5)
+                      lwd =2)
 
 m1_net + m2_net + m3_net
  
 ```
 
+#### Generating a routable pre-Disaster network
 
-
-#### Pre-Disaster network
+A T
 
 ```{sql}
 #| eval: false
@@ -493,9 +573,22 @@ CREATE TABLE porto_alegre_net_largest AS
 	    net_multi_component.source IN (net_largest_component.node);
 ```
 
-#### Post-Disaster network
+#### Generating a routable post-Disaster network
 
-A naive approach overlaying the flooding mask with the road network by the function *st_difference()* crashed the session.  The follwing multi-step methodology reduced the processing cost making the query feasible using less resources by incorporating boolean operators in some steps. In other studies, decomposing difference function queries using boolean operators reported an increase on the performance of 223% in PostgreSQL [@gruca_spatial_2014]. Firstly the network inside the flooding mask is selected. Secondly, a subset of the network outside the flooding mask avoided using spatial operations saving computing resources by using the ID's from the network inside the flooding to filter the data.Thirdly, to obtain the boundaries between the inside and outside network, the geometry is converted into its exterior ring. From this network on the boundary, only the exterior part that intersected with the outside boundary was selected.   
+A naive approach overlaying the flooding mask with the road network by
+the function *st_difference()* crashed the session. The follwing
+multi-step methodology reduced the processing cost making the query
+feasible using less resources by incorporating boolean operators in some
+steps. In other studies, decomposing difference function queries using
+boolean operators reported an increase on the performance of 223% in
+PostgreSQL [@gruca_spatial_2014]. Firstly the network inside the
+flooding mask is selected. Secondly, a subset of the network outside the
+flooding mask avoided using spatial operations saving computing
+resources by using the ID's from the network inside the flooding to
+filter the data.Thirdly, to obtain the boundaries between the inside and
+outside network, the geometry is converted into its exterior ring. From
+this network on the boundary, only the exterior part that intersected
+with the outside boundary was selected.
 
 ```{sql}
 #| eval: false
@@ -663,11 +756,9 @@ mapview(subset_network_pre,
           popup=popupTable(subset_network_post))
 ```
 
-
 ```{=html}
 <iframe width="760" height="500" src="/media/network_post_creation.html" title = "Methodology to create post-flooding network "></iframe>
 ```
-
 ### Post-scenario
 
 ```{sql}
@@ -839,19 +930,25 @@ VACUUM(full, ANALYZE) porto_alegre_net_largest;
 
 ```
 
-
 ## Measuring centrality on networks
 
 ### Generating Origin-Destination
 
 #### Sampling using regular distribution
 
-A series of regular points that represented the origin and destination on the Area of Interest is created with the function  ["I_Grid_Point_Series"](https://gis.stackexchange.com/questions/4663/creating-regular-point-grid-inside-polygon-in-postgis).
+A series of regular points that represented the origin and destination
+on the Area of Interest is created with the function
+["I_Grid_Point_Series"](https://gis.stackexchange.com/questions/4663/creating-regular-point-grid-inside-polygon-in-postgis).
 
-The following code created 1258 points representing the origin or destination regularly separated by 0.01º.
+The following code created 1258 points representing the origin or
+destination regularly separated by 0.01º.
 
-The application of two indexes improved further queries on this new table. This was recommended because these points were outside the network requiring snapping, which is a spatial operation with relatively high computational costs. 
-Apart from indexing the geometry column and the id, the query is constrained to a buffer of 0.02º to reduce computational costs.
+The application of two indexes improved further queries on this new
+table. This was recommended because these points were outside the
+network requiring snapping, which is a spatial operation with relatively
+high computational costs. Apart from indexing the geometry column and
+the id, the query is constrained to a buffer of 0.02º to reduce
+computational costs.
 
 ```{sql}
 #| eval: false
@@ -1120,12 +1217,7 @@ CREATE INDEX idx_hospital_rs_node_v2 ON hospital_rs_node_v2 USING btree(id);
 ```{=html}
 
 <iframe width="760" height="500" src="/media/map_sampling_example_v0.html" title = "Inspect of the components in the graph network "></iframe>
-
 ```
-
-
-
-
 ```{r}
 #| message: false
 #| warning: false
@@ -1278,7 +1370,6 @@ on
 
 ```
 
-
 ```{sql}
 #| eval: false
 #| code-summary: "PostGIS: Calculating edge betweenness centrality on the post-disaster network"
@@ -1355,7 +1446,6 @@ on
 
 #### Para hospitales
 
-
 ```{sql}
 #| eval: false
 #| code-summary: "PostGIS: Calculating edge betweenness centrality for each hospital" 
@@ -1400,7 +1490,6 @@ EXPLAIN ANALYZE
 
 ```
 
-
 #### Edge betweenness
 
 ```{sql}
@@ -1439,7 +1528,6 @@ with random_272_destination AS (
         SELECT * FROM  random_272_destination;  
 
 ```
-
 
 ```{sql}
 #| eval: false
@@ -1518,7 +1606,6 @@ SELECT * FROM vertices;
 
 ```
 
-
 ```{sql}
 #| eval: false
 #| connection: eisenberg_connection
@@ -1547,7 +1634,6 @@ vertices AS (
 SELECT * FROM vertices;
 
 ```
-
 
 ### Calculating closeness
 
@@ -1627,5 +1713,3 @@ LEFT JOIN
 ### Assesing vulnerability based on socioeconomic indicators
 
 ## Verifying results
-
-

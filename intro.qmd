@@ -1,8 +1,18 @@
 # Introduction
 
+Key variables:
+- Centrality ---> vulnerability-resilience
+- Accessibility ----> vulnerability-resilience
+
+
+
 ##  Describe a big problem that needs to be solved
 
 Natural hazards are becoming disasters, as the frequency and severity of extreme event related to climate change increase[@kuffer_eo-based_2021]. It is in the magnitude of loss of lives and  economical, environmental and material damage where the difference between natural hazards and disasters lies, requiring external aid [@ayala-carcedo_riesgos_2002]. In this situation, the system's capacity to recover from change, namely, its resilience [@levin_princeton_2012], failed causing the interruption of the urban functionality.
+
+## Case
+
+The different study areas were in Rio Grande do Sul, which is located in the southernmost region of Brazil bordered by Uruguay in the south and Argentina to the west. Its total extension of 281.707 km² includes 497 municipalities with 274,390 population exposed to risk areas [@noauthor_caracterizacao_nodate].. The first study area lies between 51º 27'91''W and 50º94'07''W latitude and 30º17'22''S and 29º80'48''S being identified as the dense urban centre 1210 according to the GHL-SMOD. This area contains the municipalities of Porto Alegre, Canoas, Cachoeirinha,Alvorada, Gravataí, Esteio,Sapucaia do Sul and Viamão.
 
 
 
