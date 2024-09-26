@@ -1,8 +1,6 @@
 # Results
 
-Key variables:
-- Centrality --->  connectivity
-- Accessibility ----> vulnerability-resilience
+Key variables: - Centrality ---\> connectivity - Accessibility ----\> vulnerability-resilience
 
 ```{r}
 #| echo: false
@@ -25,11 +23,17 @@ eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
 centrality_pre <- st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
 centrality_post <- st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned_post")
 flooding <- sf::st_read("~/heigit_bookdown/data/flooding_porto.geojson") 
+nuts_porto <-st_read(eisenberg_connection, "nuts_porto")
+ghs <- st_read(eisenberg_connection, "ghs_aoi_porto_alegre")
+hospitals <- st_read(eisenberg_connection, "hospital_rs_destination")
+pre_network <- st_read(eisenberg_connection, "porto_alegre_net_largest")
 ```
 
 ## Data preparation
+
 ### OSM & ORS data
 
+The area of interested  covered `r round(st_area(st_as_sfc(st_bbox(ghs$geom)))/1000000)` km² of surface including `r nrow(nuts_porto)` municipalities with `r nrow(hospitals)` healthcare facilities. The size of the network where the centrality analysis was conducted contained `r ``  
 
 
 ```{r}
@@ -39,13 +43,10 @@ flooding <- sf::st_read("~/heigit_bookdown/data/flooding_porto.geojson")
 osmium extract -b -51.2791,-30.1722,-50.9407,-29.8048 sul-240501.osm.pbf -o puerto_alegre_urban_center.osm.pbf
 ```
 
-
-
 ```{=html}
 
 <iframe width="760" height="500" src="/media/map_sampling_example_v0.html" title = "Inspect of the components in the graph network "></iframe>
 ```
-
 ```{r}
 #| message: false
 #| warning: false
@@ -63,6 +64,7 @@ regular_sampling <- st_read("/home/ricardo/heigit_bookdown/data/random_points_sn
 regular_sampling_100 <- sample_n(regular_sampling, size = 100)
 weighted_sampling_origin <- st_read(eisenberg_connection,"weight_sampling_100_origin")
 weighted_sampling_destination <- st_read(eisenberg_connection,"weight_sampling_100_destination")
+nuts <- st_read(eisenberg_connection, "nuts")
 
 weighted_sampling_origin$sample <- "origin"
 weighted_sampling_destination$sample <- "destination"
@@ -119,7 +121,6 @@ mapview(subset(poi_hospital,
                popup=popupTable(poi_hospital, zcol=c("cd_cnes","ds_cnes","id")))
 
 ```
-
 
 ```{sql}
 #| connection: eisenberg_connection
@@ -297,11 +298,9 @@ FROM difference_outside_flood_v4;
 --- Final product: porto_alegre_street_united_v2
 ```
 
-
 ## RQ1: Centrality analysis
 
->How does road connectivity change after being impacted by flooding based on
-connectivity metrics?
+> How does road connectivity change after being impacted by flooding based on connectivity metrics?
 
 ### Sum Edge Betweenness
 
@@ -346,9 +345,7 @@ centrality_pre_map | centrality_post_map + mapview(flooding,
 ```{=html}
 
 <iframe width="760" height="500" src="/media/centrality_map_results.html" title = "Sum Edge Betweenness in the Urban Settlement located in Porto Alegre "></iframe>
-
 ```
-
 GEoref
 
 ```{r}
@@ -437,14 +434,10 @@ DT::datatable(subset(df_centrality_negative_outlier_distinct_address, select=c("
                     backgroundPosition='center') 
 ```
 
-
 ```{=html}
 
 <iframe width="760" height="500" src="/media/centrality_table_results.html" title = "Sum Edge Betweenness in the Urban Settlement located in Porto Alegre "></iframe>
-
 ```
-
-
 ```{r}
 #| warming: false
 #| message: false
@@ -470,7 +463,6 @@ ggplot(centrality_both, aes(x=centrality, fill=event)) +
         legend.position='bottom') +
     theme_minimal()
 ```
-
 
 ```{r}
 #| warming: false
@@ -521,13 +513,11 @@ barplot_event_cat_sum <- df_centrality_both_barplot_cat |>
 
 ```
 
-
 ```{r}
 #| warning: false
 #| message: false
 #| eval: false
-#| echo: false
-#| code-summary: "R: Vs"
+#| code-summary: "R: Identifying"
 
 df_centrality_both_pareto_cat <- na.omit(
   df_centrality_both_barplot) |> 
@@ -542,7 +532,7 @@ df_centrality_both_pareto_cat <- na.omit(
     centrality <= quantile(
         df_centrality_pre[df_centrality_pre$event == 'pre-flooding',]$centrality, .80) ~ "80%",
     centrality >= quantile(
-        df_centrality_pre[df_centrality_pre$event == 'pre-flooding',]$centrality, .80) ~ "99%",
+        df_centrality_pre[df_centrality_pre$event == 'pre-flooding',]$centrality, .80) ~ "80-100%",
     TRUE ~ "missing")))  
 
 d <- df_centrality_both_pareto_cat |>
@@ -564,9 +554,11 @@ par(mar=c(5,5,4,5))
 pc = barplot(d$centrality_sum,
              width = 1, space = 0.2, border = NA, axes = F,
              ylim = c(0, 1.05 * max(d$centrality_sum, na.rm = T)), 
-             ylab = "Counts" , cex.names = 0.7, 
+             ylab = "Frequency of betweenness centrality" ,
+             xlab = "Quantiles",
+             cex.names = 0.7, 
              names.arg = d$centrality_cat,
-             main = "Pareto Chart")
+             main = "Identifying significant root causes for centrality")
 
 ## anotate left axis
 axis(side = 2, at = c(0, d$centrality_sum), las = 1, col.axis = "grey62", col = "grey62", tick = T, cex.axis = 0.8)
@@ -585,10 +577,9 @@ axis(side = 4, at = c(0, px), labels = paste(c(0, round(d$cum_freq * 100)) ,"%",
 ## restoring default paramenter
 par(def_par) 
 ```
-
+![](/media/pareto_chart.png)
 
 ### Closeness
-
 
 ```{r}
 #| code-summary: "R: Visualizing closeness of the healthcare facilities"
@@ -663,10 +654,9 @@ DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes"
   backgroundPosition = 'center') 
 ```
 
-## RQ2:  Accessibility analysis
+## RQ2: Accessibility analysis
 
-> Which healthcare facilities will be most affected by flooding based on accessibility
-metrics?
+> Which healthcare facilities will be most affected by flooding based on accessibility metrics?
 
 ### Sum Edge Betweenness:
 
@@ -830,8 +820,6 @@ p <- ggplot(hospitals_closeness_long, aes(x=closeness_value, y=reorder(letter, d
 
 ![](/media/accessibility_test2.png)
 
-
-
 ```{r}
 #| code-summary: "R: Changes on the accesibiliy based on closeness"
 hospitals_closeness_both <- st_read(eisenberg_connection, "hospitals_closeness_both") 
@@ -870,8 +858,6 @@ DT::datatable(subset(df_hospitals_closeness_both_compare,
   backgroundPosition = 'center')
 ```
 
-
 ## RQ3: Critical infrastructures
 
-> Where are the most critical infrastructures located for accessing health facilities
-to reinforce urban resilience against flooding?
+> Where are the most critical infrastructures located for accessing health facilities to reinforce urban resilience against flooding?

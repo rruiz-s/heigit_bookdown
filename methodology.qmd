@@ -927,7 +927,7 @@ $$
 \text{CN}(v) = \frac{n - 1}{\sum_{w = 1}^{n - 1} d(w, v)}
 $$
 
-|       where *d(w,v)* is the shortest path distance and *n-1* is the number of nodes reachable from *v*. In this case, instead of using the distance to determine how central each hospital in the AoI was,it was the cost provided by ORS. A higher value indicated a faster access to the hospital, while a large decrease after the flooding event indicated high vulnerability.
+|       where *d(w,v)* is the shortest path distance and *n-1* is |       the number of nodes reachable from *v*. In this case,     |       instead of using the distance to determine how central |  |       each hospital in the AoI was,it was the cost provided by |        ORS. A higher value indicated a faster access to the |           hospital, while a large decrease after the flooding event |       indicated high vulnerability.
 
 -   The betweenness centrality assess the significance of roads in a
     network by counting the number of shortest paths that pass through
@@ -938,7 +938,7 @@ $$
 c_{B}(v) = \sum_{\substack{s \neq t \neq v \\ s,t \in V}} \frac{\sigma(s,t|v)}{\sigma(s,t)}
 $$
 
-|       where σ(s,t\|v) is the total number of shortest paths between s and t that pass through v, and σ(s,t) is the total number of shortest paths between s and t (regardless of whether or not they pass through v). In the event that shortest paths are unique, cB(v) just counts the number of shortest paths going through v [@kolaczyk_statistical_2014]. In this case, edges are used instead of vertices. Those roads that are frequently part of shortest paths had higher valuees. This metric was used before to assess the accessibility of critical amenities before and during floodings. [@phua_fostering_2024 ; @petricola_assessing_2022 ; @gangwal_critical_2023].
+|       where σ(s,t\|v) is the total number of shortest paths      between s and t that pass through v, and σ(s,t) is the total    number of shortest paths between s and t (regardless of whether or not they pass through v). In the event that shortest paths are unique, cB(v) just counts the number of shortest paths going through v [@kolaczyk_statistical_2014]. In this case, edges are used instead of vertices. Those roads that are frequently part of shortest paths had higher values. This metric was used before to assess the accessibility of critical amenities before and during floodings [@phua_fostering_2024 ; @petricola_assessing_2022 ; @gangwal_critical_2023].
 
 ### Generating Origin-Destination matrix
 
@@ -1427,129 +1427,12 @@ DT::datatable(subset(centrality_post, select=c("bidirectid","id","source","targe
               ) 
 ```
 
+#### Assessing hospitals centrality
 
-#### Asessing hospitales centrality
-
-
-
-```{sql}
-#| eval: false
-#| code-summary: "PostGIS: Calculating edge betweenness centrality for each hospital" 
-
---- POST-EVENT
-CREATE TABLE weight_sampling_454_origin_post  AS
-WITH porto_454_origin_post AS (
-        SELECT
-            * 
-        FROM 
-            od_2728_snapped_post
-        ORDER BY random() 
-        LIMIT 454)
-SELECT * FROM  porto_454_origin_post;	
-
----- Create index for origin
-CREATE INDEX weight_sampling_454_origin_post_net_id ON weight_sampling_454_origin_post USING hash(net_id);
-CREATE INDEX weight_sampling_454_origin_post_geom ON weight_sampling_454_origin_post USING gist(the_geom);
----- Running the query
- ---- Group by end_vid that represent destination
-EXPLAIN ANALYZE
- CREATE TABLE centrality_424_hospitals_porto_end_id_centrality_post AS
- SELECT   
- b.id,
- j.end_vid,
- b.the_geom,
- count(the_geom) as centrality 
- FROM  pgr_dijkstra('SELECT  id,
-                             source,
-                            target,
-                            cost
-                      FROM prueba_largest_network_post',
-                      ARRAY(SELECT net_id AS origin_id FROM weight_sampling_454_origin_post),
-                      ARRAY(SELECT id AS destination_id FROM hospital_rs_destination),
-                      directed := TRUE) j
-            LEFT JOIN prueba_largest_network_post AS b
-            ON j.edge = b.id
-            GROUP BY  b.id, j.end_vid, b.the_geom
-            ORDER BY centrality DESC;   
-
-
-
-```
-
-### Carrying out accessibility analysis
-#### Asessing hospitals accessibility
+A subset of 474 points from the weighted sampling was the origin table (source or fromid), while 22 hospitals within the AoI were the destination table (target or toid). Similarly to the network, counting the number of geometries returned the centrality value. However, for the hospital centrality centrality values were also grouped by the destination, named as end_vid. Applying this process to the pre-network and post-network with their respective OD matrix allowed us to assess the change of centrality on the healthcare facilities. 
 
 ```{sql}
 #| eval: false
-#| code-summary: "PostGIS: Calculating closenness centrality"
-
----- Pre-Event
-CREATE TABLE clossness_hospital_porto AS 
-WITH dijkstra_cost AS (
-SELECT * FROM pgr_dijkstraCostMatrix(
-  'SELECT id, source, target, cost FROM porto_alegre_net_largest',
-  (SELECT array_agg(id)
-    FROM porto_alegre_net_largest_vertices_pgr
-    WHERE id IN (SELECT id FROM hospital_rs_node_v3)),
-  true)),
-closeness AS (
- SELECT dc.start_vid,
-        sum(agg_cost)::int AS closeness
-FROM dijkstra_cost dc
-GROUP BY dc.start_vid
-ORDER BY closeness DESC)
-SELECT 
-    h.cd_cnes,
-    h.ds_cnes,
-    c.closeness,
-    h.distance,
-    h.geom_node,
-    h.geom_hospital
-FROM 
-    closeness AS c
-LEFT JOIN
-    hospital_rs_node_v3 AS h ON  c.start_vid = h.id;
---- Post event
-CREATE TABLE clossness_hospital_porto_post AS 
-WITH dijkstra_cost AS (
-SELECT * FROM pgr_dijkstraCostMatrix(
-  'SELECT id, source, target, cost FROM prueba_largest_network_post',
-  (SELECT array_agg(id)
-    FROM prueba_largest_network_post_vertices_pgr
-    WHERE id IN (SELECT id FROM hospital_rs_node_v3)),
-  true)),
-closeness AS (
- SELECT dc.start_vid,
-        sum(agg_cost)::int AS closeness
-FROM dijkstra_cost dc
-GROUP BY dc.start_vid
-ORDER BY closeness DESC)
-SELECT 
-    h.cd_cnes,
-    h.ds_cnes,
-    c.closeness,
-    h.distance,
-    h.geom_node,
-    h.geom_hospital
-FROM 
-    closeness AS c
-LEFT JOIN
-    hospital_rs_node_v3 AS h ON  c.start_vid = h.id;   
-    
----- Add centrality from post-event to pre-event
-CREATE TABLE hospitals_closeness_both AS 
-SELECT
-	pre.cd_cnes,
-	pre.ds_cnes,
-	pre.closeness  AS closeness_pre,
-	coalesce(post.closeness,0) AS closeness_post,
-	pre.geom_node,
-	pre.geom_hospital
-FROM 
-	clossness_hospital_porto AS pre
-LEFT JOIN 
-	clossness_hospital_porto_post AS post ON pre.cd_cnes  = post.cd_cnes
------ V2
 ------ PRE-EVENT
 ---- Based on a max of 100*100 / 22 = 454   
 SELECT count(*) FROM hospital_rs_node_v2;  --- 22 POI: Hospitals 
@@ -1731,10 +1614,127 @@ LEFT JOIN
 GROUP BY end_vid, cd_cnes, ds_cnes;
 ```
 
+### Carrying out accessibility analysis
+
+Closenness
+
+#### Asessing hospitals accessibility
+
+The function [pgr_dijkstraCostMatrix](https://docs.pgrouting.org/latest/en/pgr_dijkstraCostMatrix.html) calculated the sum of the costs of the shortest path for pair combination  of nodes in the graph. Grouping the aggregated costs of these cost matrix by origin returned the closeness metrics. Lastly, using the ID of the vertices from the hospital tables the closeness values are included obtaining the most affected healthcare facilities
+
+```{sql}
+#| eval: false
+#| code-summary: "PostGIS: Calculating closeness for each hospital" 
+
+--- POST-EVENT
+CREATE TABLE weight_sampling_454_origin_post  AS
+WITH porto_454_origin_post AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_post
+        ORDER BY random() 
+        LIMIT 454)
+SELECT * FROM  porto_454_origin_post;	
+
+---- Create index for origin
+CREATE INDEX weight_sampling_454_origin_post_net_id ON weight_sampling_454_origin_post USING hash(net_id);
+CREATE INDEX weight_sampling_454_origin_post_geom ON weight_sampling_454_origin_post USING gist(the_geom);
+---- Running the query
+ ---- Group by end_vid that represent destination
+EXPLAIN ANALYZE
+ CREATE TABLE centrality_424_hospitals_porto_end_id_centrality_post AS
+ SELECT   
+ b.id,
+ j.end_vid,
+ b.the_geom,
+ count(the_geom) as centrality 
+ FROM  pgr_dijkstra('SELECT  id,
+                             source,
+                            target,
+                            cost
+                      FROM prueba_largest_network_post',
+                      ARRAY(SELECT net_id AS origin_id FROM weight_sampling_454_origin_post),
+                      ARRAY(SELECT id AS destination_id FROM hospital_rs_destination),
+                      directed := TRUE) j
+            LEFT JOIN prueba_largest_network_post AS b
+            ON j.edge = b.id
+            GROUP BY  b.id, j.end_vid, b.the_geom
+            ORDER BY centrality DESC;   
+
+
+
+---- Pre-Event
+CREATE TABLE clossness_hospital_porto AS 
+WITH dijkstra_cost AS (
+SELECT * FROM pgr_dijkstraCostMatrix(
+  'SELECT id, source, target, cost FROM porto_alegre_net_largest',
+  (SELECT array_agg(id)
+    FROM porto_alegre_net_largest_vertices_pgr
+    WHERE id IN (SELECT id FROM hospital_rs_node_v3)),
+  true)),
+closeness AS (
+ SELECT dc.start_vid,
+        sum(agg_cost)::int AS closeness
+FROM dijkstra_cost dc
+GROUP BY dc.start_vid
+ORDER BY closeness DESC)
+SELECT 
+    h.cd_cnes,
+    h.ds_cnes,
+    c.closeness,
+    h.distance,
+    h.geom_node,
+    h.geom_hospital
+FROM 
+    closeness AS c
+LEFT JOIN
+    hospital_rs_node_v3 AS h ON  c.start_vid = h.id;
+--- Post event
+CREATE TABLE clossness_hospital_porto_post AS 
+WITH dijkstra_cost AS (
+SELECT * FROM pgr_dijkstraCostMatrix(
+  'SELECT id, source, target, cost FROM prueba_largest_network_post',
+  (SELECT array_agg(id)
+    FROM prueba_largest_network_post_vertices_pgr
+    WHERE id IN (SELECT id FROM hospital_rs_node_v3)),
+  true)),
+closeness AS (
+ SELECT dc.start_vid,
+        sum(agg_cost)::int AS closeness
+FROM dijkstra_cost dc
+GROUP BY dc.start_vid
+ORDER BY closeness DESC)
+SELECT 
+    h.cd_cnes,
+    h.ds_cnes,
+    c.closeness,
+    h.distance,
+    h.geom_node,
+    h.geom_hospital
+FROM 
+    closeness AS c
+LEFT JOIN
+    hospital_rs_node_v3 AS h ON  c.start_vid = h.id;   
+    
+---- Add centrality from post-event to pre-event
+CREATE TABLE hospitals_closeness_both AS 
+SELECT
+	pre.cd_cnes,
+	pre.ds_cnes,
+	pre.closeness  AS closeness_pre,
+	coalesce(post.closeness,0) AS closeness_post,
+	pre.geom_node,
+	pre.geom_hospital
+FROM 
+	clossness_hospital_porto AS pre
+LEFT JOIN 
+	clossness_hospital_porto_post AS post ON pre.cd_cnes  = post.cd_cnes
+```
+
 ### Assesing vulnerability based on socioeconomic indicators
 
 ## Validating results
-
 
 ```{sql}
 #| eval: false
