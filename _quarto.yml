@@ -1,5 +1,6 @@
 project:
   type: book
+  output-dir: docs
 
 execute:
   freeze: auto
@@ -24,7 +25,9 @@ book:
     - results.qmd
     - conclussion.qmd
     - future_work.qmd
+  appendices:
     - appendix.qmd
+    - references.qmd
 
 bibliography: references.bib
 
@@ -33,8 +36,9 @@ format:
     code-fold: true
     code-summary: "Show the code"
     theme: 
-      light: [journal, custom.scss]
+      light: [journal,custom.scss]
       dark: [solar,custom.scss]
+    toc: true
   pdf:
     documentclass: scrreprt
   epub:

@@ -21,33 +21,43 @@ eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
 
 ```
 
-
 # Methodology
 
 ## Technical design
+
 ### Research strategy
 
 A quantitative analysis of the road connectivity and access to
 healthcare facilities before and after a flooding event identified the
-temporal patterns of changes on centrality metrics. This was based on the case study of Rio Grande do Sul floodings that took place in late April 2024. The spatial pattern of the flooding shown that some regions were more vulnerable than others. Lastly, an assessment of different pathways to
-the healthcare facilities contributed to take an informed decision on
-which areas are more critical to avoid the disruption of healthcare
-access facilitating urban resilience.
+temporal patterns of changes on centrality metrics. This was based on
+the case study of Rio Grande do Sul floodings that took place in late
+April 2024. The spatial pattern of the flooding shown that some regions
+were more vulnerable than others. Lastly, an assessment of different
+pathways to the healthcare facilities contributed to take an informed
+decision on which areas are more critical to avoid the disruption of
+healthcare access facilitating urban resilience.
 
-Therefore, this practical-orientated research aim to make a diagnosis of the occurred flooding in Rio Grande do Sul to identifying the potential critical infrastructures necessary for accessing healthcare facilities that could improve the urban resilience against future floodings.  
-
+Therefore, this practical-orientated research aim to make a diagnosis of
+the occurred flooding in Rio Grande do Sul to identifying the potential
+critical infrastructures necessary for accessing healthcare facilities
+that could improve the urban resilience against future floodings.
 
 ### Research planning
 
-To address the diagnosis of the loss of centrality by the flooding, the methodological approach is segmented into three major lanes that constituted the workflow of this research.
+To address the diagnosis of the loss of centrality by the flooding, the
+methodological approach is segmented into three major lanes that
+constituted the workflow of this research.
 
-1.  The first lane, selection of the Area Of Interested (AOI),  defined the study area based on the
-    flooding extent reported by the Universidade Federal do Rio Grande
-    do Sul and imported the OSM network geometry using osmium.
-2.  The second lane, routable network, transformed the OSM network geometry into a routable graph        network using OpenRoutService. Additionally, the post-disaster network is derived through spatial
+1.  The first lane, selection of the Area Of Interested (AOI), defined
+    the study area based on the flooding extent reported by the
+    Universidade Federal do Rio Grande do Sul and imported the OSM
+    network geometry using osmium.
+2.  The second lane, routable network, transformed the OSM network
+    geometry into a routable graph network using OpenRoutService.
+    Additionally, the post-disaster network is derived through spatial
     overlay with the extent of flooding.
-3.  The third lane,centrality analysis , connectivity and
-    accessibility metrics identified critical infrastructure. 
+3.  The third lane,centrality analysis , connectivity and accessibility
+    metrics identified critical infrastructure.
 
 The method is based on PostgreSQL using the extensions PostGIS and
 Pgrouting. In the context of emergency management, the spatial database
@@ -60,7 +70,16 @@ finding dynamic shortest simulating obstruction of the network by floods
 
 ### Research material
 
-The before and after flooding networks are obtained using the OSM network from Geofabrik and the flooding extent from Universidad de Rio Grande do Sul. Regarding the location of the hospitals, the Geoportal de Rio Grande do Sul and OSM offered this data. From this material, the PostGIS and OpenRouteService Docker set up the environment required to conduct the centrality analysis. Moreover, the Global Settlement Layer-SMOD classified the different cities to select the AOI, while the Global Settlement -Bult-V added different weights used in the origin-destination sampling. This research material is shown in the table.
+The before and after flooding networks are obtained using the OSM
+network from Geofabrik and the flooding extent from Universidad de Rio
+Grande do Sul. Regarding the location of the hospitals, the Geoportal de
+Rio Grande do Sul and OSM offered this data. From this material, the
+PostGIS and OpenRouteService Docker set up the environment required to
+conduct the centrality analysis. Moreover, the Global Settlement
+Layer-SMOD classified the different cities to select the AOI, while the
+Global Settlement -Bult-V added different weights used in the
+origin-destination sampling. This research material is shown in the
+table.
 
 ```{r}
 #| echo: false
@@ -84,7 +103,8 @@ DT::datatable(subset(data_df, select=c("Description","Data Type","File","Link"))
               ) 
 ```
 
-# Methodology
+# Workflow
+
 ## Selecting the Area of Interest (AoI) and importing data
 
 PostGIS queries obtained the Area of Interest calculating the bounding
@@ -270,7 +290,9 @@ DT::datatable(df_flooding,
 
 The creation of the network after the disaster using the modified
 flooding mask and the creation of the origin-destination are considered
-in this section. Before generating these routable networks, the following code set configuration parameters, recommended to deliver faster results [@10.5120/18602-9881].
+in this section. Before generating these routable networks, the
+following code set configuration parameters, recommended to deliver
+faster results [@10.5120/18602-9881].
 
 ```{sql}
 #| eval: false
@@ -285,11 +307,14 @@ CLUSTER porto_alegre_net_largest USING porto_alegre_net_largest;
 ### Importing OpenStreetMap (OSM) network as geometry
 
 The following SQL code created the command to import OpenStreetMap (OSM)
-network using osmium. After creating the spatial index on the network table, the [GHS-SMOD
+network using osmium. After creating the spatial index on the network
+table, the [GHS-SMOD
 dataset](https://human-settlement.emergency.copernicus.eu/download.php?ds=smod)
-the Global Human Settlement that intersected with Porto Alegre is selected as AOI. Secondly, this
-GHS is used to dynaically generate the bounding box and command line required by osmium. The OSM network obtained with this osmium
-command was the input required for OpenRouteService
+the Global Human Settlement that intersected with Porto Alegre is
+selected as AOI. Secondly, this GHS is used to dynamically generate the
+bounding box and command line required by osmium. The OSM network
+obtained with this osmium command was the input required for
+OpenRouteService
 ([ORS](https://heigit.org/introducing-openrouteservice-version-8-0-a-dedication-to-wilfried-juling/)).
 
 ```{sql}
@@ -340,16 +365,17 @@ FROM porto_alegre_ghs_bbox_osmium_command;
 
 Firstly, running the [docker for
 OpenRouteService](https://giscience.github.io/openrouteservice/run-instance/running-with-docker)
-transformed the OSM network from the GHS AoI into a
-graph. In the "ors-config.yml" from OpenRotueService (ORS), the
-"source_file" parameter is set to find the directory that contained the OSM geometry network.
-OpenRouteService (ORS) created a a routable network assigining costs
-and adding information for each node such as the origin, "fromId", and the destination, "toId". The R
-script "get_graph" from Marcel Reinmuth exported the ORS network named
-as "porto_alegre_net".
+transformed the OSM network from the GHS AoI into a graph. In the
+"ors-config.yml" from OpenRotueService (ORS), the "source_file"
+parameter is set to find the directory that contained the OSM geometry
+network. OpenRouteService (ORS) created a a routable network assigining
+costs and adding information for each node such as the origin, "fromId",
+and the destination, "toId". The R script "get_graph" from Marcel
+Reinmuth exported the ORS network named as "porto_alegre_net".
 
-Secondly, the data type of the columns "fromid" and "toid" in
-the network dataset from openrouteservice are transform into bigint to run the algorithm pgr_dijkstra as the [official
+Secondly, the data type of the columns "fromid" and "toid" from the
+graph network generated by ORS is transform into bigint to run the
+algorithm pgr_dijkstra as the [official
 documentation](https://docs.pgrouting.org/latest/en/pgr_dijkstra.html)
 indicated.
 
@@ -405,13 +431,18 @@ sync(m1,m2)
 
 ### Exploring ORS graph network and components
 
-Before using the graph network, a quick inspection using the
-pgrouting function
+Before using the graph network, a quick inspection using the pgrouting
+function
 [*pgr_strongComponents()*](https://docs.pgrouting.org/dev/en/pgr_strongComponents.html)
-revealed the number of components or isolated self-connecting networks within the
-graph. The largest network component is selected using its length.
-The following code created a table with the different components and
-another table containing the largest component. The reason to discard the rest of components was its relatively small size and based on the observation that these components were appeared next to OSM objects categorized as "barriers", which was assumed as private properties not relevant for emergency response.   
+revealed the number of components or isolated self-connecting networks
+within the graph. The largest network component is selected using its
+length. The following code created a table with the different components
+and another table containing the largest component. The reason to
+discard the rest of components was its relatively small size and based
+on the observation that some of these components appeared next to OSM
+objects categorized as "barriers", which meant that they were part of
+private properties, such as "Villa's Home Resot", being not relevant for
+an emergency response.
 
 ```{sql}
 #| eval: false
@@ -493,14 +524,13 @@ WHERE
 ```{=html}
 <iframe width="760" height="500" src="/media/network_components_three.html" title = "Inspect of the components in the graph network "></iframe>
 ```
-
 ```{r}
 #| eval: false
 #| code-summary: "R: Visualizing the three longest component"
 
 component_analysis_network <- st_read(eisenberg_connection, "component_analysis_network_porto")
 ## Select top 3
-component_analysis_network_3 <-  component_analysis_network |> arrange(desc(distance)) |> slice(1:3) 
+component_analysis_network_3 <-  component_analysis_network |> arrange(desc(round(distance))) |> slice(1:3) 
 ### Tidy component to be used as categorical variable
 component_analysis_network_3$component  <- component_analysis_network_3$component |> as.character() |> as_factor()
 ## Visualization
@@ -514,30 +544,37 @@ m2_net <- component_analysis_network_3 |>
               filter(component=="3728") |>
               mapview(layer.name = "2nd Longest component",
                       color ="#8da0cb",
-                      lwd=2,
-                      popup= popupTable(component_analysis_network_3[component_analysis_network_3$component ==37278,] ,
+                      lwd=3,
+                      popup= popupTable( component_analysis_network_3[2,],
                                         zcol=(c("component","distance"))))
 
 m3_net <- component_analysis_network_3 |>
               filter(component=="40578") |>
               mapview(layer.name = "3rd Longest component",
                       color="#fc8d62",
-                      lwd =2)
+                      popup= popupTable(component_analysis_network_3[3,]),
+                      lwd =3)
 
 m1_net + m2_net + m3_net
  
 ```
 
-#### Generating a routable pre-Disaster network
+### Generating a routable pre-disaster network
 
-A T
+The original porto_alegre_net_pre graph network is classified by its
+components and the largest component representing the network before the
+flooding is filtered.In the first step, the components are calculated
+and the vertices from the largest network stored in the table
+*largeset_component_network_porto*. Then, selecting the vertices from
+the original table where they also appeared in the largest component
+network generated the pre-disaster network.
 
 ```{sql}
 #| eval: false
 #| code-summary: "PostGIS: Creating the pre-disaster network filtering out components"
 
 CREATE TABLE porto_alegre_net_largest AS
----- Obtain again table classifying nodes in different components		    
+---- 1) Classify the geometric OSM network in different components		    
   WITH porto_alegre_net_component AS (
     SELECT 
       * 
@@ -548,14 +585,14 @@ CREATE TABLE porto_alegre_net_largest AS
                                cost 
                             FROM 
                               porto_alegre_net_pre')),
---- Calculate the largest component from the network
+--- Obtaining the nodes from the largest component from the network
   largest_component_net AS (
 	  SELECT 
 		  component
 	  FROM 
 	 	  component_analysis_network_porto 
 	  LIMIT 1),
---- Using the largest component from the network to filter
+--- 2) Filtering the nodes from the original network to only those in the largest component
   largeset_component_network_porto AS (
     SELECT
 	    *  
@@ -573,7 +610,7 @@ CREATE TABLE porto_alegre_net_largest AS
 	    net_multi_component.source IN (net_largest_component.node);
 ```
 
-#### Generating a routable post-Disaster network
+### Generating a routable post-disaster network
 
 A naive approach overlaying the flooding mask with the road network by
 the function *st_difference()* crashed the session. The follwing
@@ -759,15 +796,22 @@ mapview(subset_network_pre,
 ```{=html}
 <iframe width="760" height="500" src="/media/network_post_creation.html" title = "Methodology to create post-flooding network "></iframe>
 ```
-### Post-scenario
+After obtaining this post-disaster network, pgrouting created the
+vertices table required to conduct the centrality analysis. Similarly to
+generating the pre-disaster network, an analysis of the component
+identified those components more relevant due to its length. Since some
+of the post-disaster network components had similar length, the table
+*"component_analysis_network_porto_post"* stored this information, which
+after a qualitative inspection determined the components and their nodes
+that finally composed the post-disaster network.
 
 ```{sql}
 #| eval: false
 #| code-summary: "PostGIS: Creating the post-disaster network"
 
----- Create vertices
+---- 1)  Creating a vertices table required for centrality analysis
 SELECT pgr_createverticesTable('porto_alegre_net_post_v5');
------ Obtain components to be used later as a filter
+---- 2)  Obtaining components and their nodes to be used later as a filter.
 CREATE TABLE component_analysis_network_porto_post AS
 WITH porto_alegre_net_component_post AS (
 SELECT 
@@ -797,7 +841,7 @@ FROM
     porto_alegre_net_component_geom_post
 GROUP BY component
 ORDER BY length DESC;
---- Summarise by component
+--- Summarising component
 CREATE TABLE components_network_post AS
 WITH porto_alegre_net_component_post AS (
 SELECT 
@@ -810,7 +854,7 @@ FROM
                                cost 
                         FROM 
                               porto_alegre_net_post_v5')),
---- Calculate the largest component from the network
+--- 3) Calculating the largest component from the network
 largests_component_net_post AS (
     SELECT 
         component,
@@ -820,7 +864,7 @@ largests_component_net_post AS (
         component_analysis_network_porto_post)
 SELECT * FROM largests_component_net_post;
 
----- Visualize which are more important
+---- Visualizing which are more important
 CREATE TABLE main_components_post AS
 SELECT 
 	* 
@@ -866,95 +910,50 @@ FROM
     largeset_component_network_porto_post AS net_largest_component
 WHERE  
     net_multi_component.source IN (net_largest_component.node);
---- Snap 2728 points to post-scenario network
-----
-CREATE TABLE od_2728_snapped_post AS
-SELECT DISTINCT ON (net.id)
-       pt.id AS pt_id,
-       net.id AS net_id,
-       net.the_geom
-FROM 
-(select * 
-FROM 
-    od_2728 as pt) as pt
-CROSS JOIN
-LATERAL (SELECT
-        * 
-        FROM prueba_largest_network_post_vertices_pgr AS net
-         ORDER BY net.the_geom <-> pt.geometry 
-        LIMIT 1) AS net;
---- Create 100 origin samples from the snapped points post-scenario
-
-CREATE TABLE weight_sampling_100_origin_post  AS
-WITH porto_100_origin AS (
-        SELECT
-            * 
-        FROM 
-            od_2728_snapped_post 
-        ORDER BY random() LIMIT 100)
-        SELECT * FROM  porto_100_origin;  
---- Create 100 destination from the snapped points post-scenario
-
-CREATE TABLE weight_sampling_100_destination_post  AS
-WITH porto_100_destination AS (
-        SELECT
-            * 
-        FROM 
-            od_2728_snapped_post 
-        ORDER BY random() LIMIT 100)
-        SELECT * FROM  porto_100_destination;  
---- Indeces on origin
-CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(pt_id);
-CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(net_id);
-CREATE INDEX weight_sampling_100_origin_idx_the_geom ON weight_sampling_100_origin USING gist(the_geom);
---- Indeces on destination
-CREATE INDEX weight_sampling_100_destination_post_idx_pt_id ON weight_sampling_100_destination_post USING btree(pt_id);
-CREATE INDEX weight_sampling_100_destination_post_idx_net_id ON weight_sampling_100_destination_post USING btree(net_id);
-CREATE INDEX weight_sampling_100_destination_post_idx_the_geom ON weight_sampling_100_destination_post USING gist(the_geom);
----- Indexes on origin
-CREATE INDEX weight_sampling_100_origin_post_idx_pt_id ON weight_sampling_100_origin_post USING btree(pt_id);
-CREATE INDEX weight_sampling_100_origin_post_idx_net_id ON weight_sampling_100_origin_post USING btree(net_id);
-CREATE INDEX weight_sampling_100_origin_post_idx_the_geom ON weight_sampling_100_origin_post USING gist(the_geom);
----- Index on the new network
-CREATE INDEX prueba_largest_network_post_idx_GEOM ON prueba_largest_network_post USING gist(the_geom);
-CREATE INDEX prueba_largest_network_post_idx_id ON prueba_largest_network_post USING btree(id);
-CREATE INDEX prueba_largest_network_post_idx_target ON prueba_largest_network_post USING btree(target);
-CREATE INDEX prueba_largest_network_post_idx_source ON prueba_largest_network_post USING btree(source);
-CREATE INDEX prueba_largest_network_post_idx_cost ON prueba_largest_network_post USING btree(cost);
----- Cluster 
-CLUSTER prueba_largest_network_post USING prueba_largest_network_post_idx_GEOM;
----- Vacuum clean
-VACUUM(full, ANALYZE) weight_sampling_100_origin;
-VACUUM(full, ANALYZE) weight_sampling_100_destination;
-VACUUM(full, ANALYZE) porto_alegre_net_largest;    
-
 ```
 
 ## Measuring centrality on networks
 
-### Generating Origin-Destination
+The centrality metrics used to determine the importance of each road
+segment or hospitals in the network were the edge betweenness centrality
+and closeness centrality respectively.
 
+-   The closenesss centrality defined as a measure of how central to
+    other vertices is a vertex [@kolaczyk_statistical_2014]. It is
+    obtained calculating the average shortest path from a node v to all
+    other nodes in the network (Eq 1) [@florath_road_2024].
+
+$$
+\text{CN}(v) = \frac{n - 1}{\sum_{w = 1}^{n - 1} d(w, v)}
+$$
+
+|       where *d(w,v)* is the shortest path distance and *n-1* is the number of nodes reachable from *v*. In this case, instead of using the distance to determine how central each hospital in the AoI was,it was the cost provided by ORS. A higher value indicated a faster access to the hospital, while a large decrease after the flooding event indicated high vulnerability.
+
+-   The betweenness centrality assess the significance of roads in a
+    network by counting the number of shortest paths that pass through
+    this node. The most common definition of the betweenness centrality
+    was introduced by Freeman (Eq 2) [@freeman_set_1977].
+
+$$
+c_{B}(v) = \sum_{\substack{s \neq t \neq v \\ s,t \in V}} \frac{\sigma(s,t|v)}{\sigma(s,t)}
+$$
+
+|       where σ(s,t\|v) is the total number of shortest paths between s and t that pass through v, and σ(s,t) is the total number of shortest paths between s and t (regardless of whether or not they pass through v). In the event that shortest paths are unique, cB(v) just counts the number of shortest paths going through v [@kolaczyk_statistical_2014]. In this case, edges are used instead of vertices. Those roads that are frequently part of shortest paths had higher valuees. This metric was used before to assess the accessibility of critical amenities before and during floodings. [@phua_fostering_2024 ; @petricola_assessing_2022 ; @gangwal_critical_2023].
+
+### Generating Origin-Destination matrix
+
+The volume of people is modeled using a traffic matrix or origin-destination (OD) matrix denoted by $Z = [Z_{ij}]$ , where $Z_{ij}$ represents the total volume of people flowing from a starting point $i$ to a ending point $j$ in a given period of time. For this study case, these generated points are then snapped into the ORS graph network where the variables *"fromid"* and *"toid"* are the origin and destination respectively. A naive approach sampled these OD using a regular distribution, while another approach used the built-up density as weight to take more samples where there were more buildings. The motivation of choice were previous studies that suggested using to consider origin-destination distributions to avoid being overly simplistic [@coles_beyond_2017]. 
+ 
 #### Sampling using regular distribution
 
-A series of regular points that represented the origin and destination
-on the Area of Interest is created with the function
-["I_Grid_Point_Series"](https://gis.stackexchange.com/questions/4663/creating-regular-point-grid-inside-polygon-in-postgis).
-
-The following code created 1258 points representing the origin or
-destination regularly separated by 0.01º.
-
-The application of two indexes improved further queries on this new
-table. This was recommended because these points were outside the
-network requiring snapping, which is a spatial operation with relatively
-high computational costs. Apart from indexing the geometry column and
-the id, the query is constrained to a buffer of 0.02º to reduce
-computational costs.
+The function ["I_Grid_Point_Series"](https://gis.stackexchange.com/questions/4663/creating-regular-point-grid-inside-polygon-in-postgis) created a series of regular points that represented the OD matrix given an area geometry, and the distance for the X-axis and Y-axis in angle degrees. After this, a table stored 1258 sample points generated on the AoI with a distance of 0.01 º between each sample. Lastly, the application of two indexes improved further queries on this new table. This was recommended because these points were outside the network requiring snapping, which is a spatial operation with relatively high computational costs. Apart from indexing the geometry column and
+the id, the query is constrained to a buffer of 0.01º to reduce computational costs and the one multipoint geometry is converted into 1258 simple points.
 
 ```{sql}
 #| eval: false
 #| code-summary: "PostGIS: Creating a function to sample regularly"
 
---- Creating the function that sample regularly:
+--- 1) Creating the function that sample OD regularly:
 CREATE OR REPLACE FUNCTION I_Grid_Point_Series(geom geometry, x_side decimal, y_side decimal, spheroid boolean default false)
 RETURNS SETOF geometry AS $BODY$
 DECLARE
@@ -995,7 +994,7 @@ generate_series(0, y_series) as y
 WHERE st_intersects(st_setsrid(ST_MakePoint(x*x_side + x_min, y*y_side + y_min), srid), geom);
 END;
 $BODY$ LANGUAGE plpgsql IMMUTABLE STRICT;
---- Using this function to create the sampling table
+--- 2) Using this function to create the sampling table
 CREATE TABLE regular_point_od AS (
 WITH multipoint_regular AS(
 select 
@@ -1010,14 +1009,14 @@ SELECT
     geom
 FROM 
     point_regular);
---- Applying indexes
+--- 3) Applying indexes to increase performance
 CREATE INDEX idx_regular_point_od_geom ON regular_point_od USING GIST (geom);
 CREATE INDEX idx_regular_point_od_id ON regular_point_od USING btree(id);
 ```
 
 #### Sampling using weighted distribution
 
-In R...
+Currently sampling the OD matrix using a weighted distribution is carried out using R. An aliquot of 2728 points is taken from the total size of the sample population of 2.728.133, which represented a 1% of this total. The function spatSample from the terra library took this sample based on the GHS-Built-V raster and the results are stored directly in the PostgreSQL database using the DBI library. 
 
 ```{r}
 #| eval: false 
@@ -1042,18 +1041,18 @@ DBI::dbWriteTable(connection,
                   od)
 ```
 
-Snap the points
+After creating an ID for the samples, a neighbor nearest function snapped these points into the closest node of the network. Subsequently, 
 
 ```{sql}
 #| eval: false
 #| code-summary: "PostGIS: Snapping samples to the closest node"
 #| connection: eisenberg_connection
 
---- Create ID column
+--- 0) Creating an ID column
 ALTER TABLE od_2728
 ADD COLUMN id serial PRIMARY KEY;
-
---- Snap all the Apoints based on building density to the closest vertice within the network
+----1: Pre flooding event
+--- 1.1) Snapping all the points based on building density to the closest vertices within the network
 CREATE TABLE od_2728_snapped AS
 SELECT DISTINCT ON (net.id)
        pt.id AS pt_id,
@@ -1069,7 +1068,7 @@ LATERAL (SELECT
         FROM porto_alegre_net_largest_vertices_pgr AS net
          ORDER BY net.the_geom <-> pt.geometry 
         LIMIT 1) AS net;
---- Create 100 origin samples from the snapped points
+--- 1.2) Limiting to 100 origin samples in the pre flooding event
 
 CREATE TABLE weight_sampling_100_origin  AS
 WITH porto_100_origin AS (
@@ -1080,7 +1079,7 @@ WITH porto_100_origin AS (
         ORDER BY random() LIMIT 100)
         SELECT * FROM  porto_100_origin;  
         
---- Create 100 destination from the snapped points
+--- 1.3) Create 100 destination from the snapped points in the pre flooding event
 CREATE TABLE weight_sampling_100_destination  AS
 WITH porto_100_destination AS (
         SELECT
@@ -1093,7 +1092,8 @@ WITH porto_100_destination AS (
 CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(pt_id);
 CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(net_id);
 CREATE INDEX weight_sampling_100_origin_idx_the_geom ON weight_sampling_100_origin USING gist(the_geom);
---- Indeces on destination
+----- A) Indexes, clustering and vacuum
+---  Indexes on destination
 CREATE INDEX weight_sampling_1000_destination_idx_pt_id ON weight_sampling_1000_destination USING btree(pt_id);
 CREATE INDEX weight_sampling_1000_destination_idx_net_id ON weight_sampling_1000_destination USING btree(net_id);
 CREATE INDEX weight_sampling_1000_destination_idx_the_geom ON weight_sampling_1000_destination USING gist(the_geom);
@@ -1104,58 +1104,68 @@ VACUUM(full, ANALYZE) weight_sampling_100_origin;
 VACUUM(full, ANALYZE) weight_sampling_100_destination;
 VACUUM(full, ANALYZE) porto_alegre_net_largest;
 ----
-
----- add ID
-ALTER TABLE od_77763
-ADD COLUMN id serial;
----- Rename the column name
-ALTER TABLE od_77763
-rename "GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0" 
-to "build";
----- create spatial index
-CREATE INDEX idx_od_77763_geom ON od_77763
-       USING gist(geometry);
-CREATE INDEX idx_od_77763_id on weighted_sampling
-       USING btree(id);
-CREATE INDEX idx_od_77763_geom_build on weighted_sampling 
-       USING btree("build");
----- The current total is 77763
-
-----
-CREATE TABLE od_40420_snapped_origin AS
+---- 2) Post flooding scenario:
+---  2.1) Snapping 2728 points to post-scenario network
+CREATE TABLE od_2728_snapped_post AS
 SELECT DISTINCT ON (net.id)
-	   pt.id AS pt_id,
-	   net.id AS net_id,
-	   net.the_geom
+       pt.id AS pt_id,
+       net.id AS net_id,
+       net.the_geom
 FROM 
 (select * 
 FROM 
-	od_77763 as pt) as pt
+    od_2728 as pt) as pt
 CROSS JOIN
 LATERAL (SELECT
-		* 
-		FROM porto_alegre_net_largest_vertices_pgr AS net
-		 ORDER BY net.the_geom <-> pt.geometry 
-		LIMIT 1) AS net;
-----
-
-CREATE TABLE od_40420_snapped_destination AS
-SELECT DISTINCT ON (net.id)
-	   pt.id AS pt_id,
-	   net.id AS net_id,
-	   net.the_geom
-FROM 
-(select * 
-FROM 
-	od_77763 as pt) as pt
-CROSS JOIN
-LATERAL (SELECT
-		* 
-		FROM porto_alegre_net_largest_vertices_pgr AS net
-		 ORDER BY net.the_geom <-> pt.geometry 
-		LIMIT 1) AS net;
+        * 
+        FROM prueba_largest_network_post_vertices_pgr AS net
+         ORDER BY net.the_geom <-> pt.geometry 
+        LIMIT 1) AS net;
+--- 2.2) Creating 100 origin samples from the snapped points post-scenario
+CREATE TABLE weight_sampling_100_origin_post  AS
+WITH porto_100_origin AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_post 
+        ORDER BY random() LIMIT 100)
+        SELECT * FROM  porto_100_origin;  
+--- 2.3) Creating 100 destination from the snapped points post-scenario
+CREATE TABLE weight_sampling_100_destination_post  AS
+WITH porto_100_destination AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_post 
+        ORDER BY random() LIMIT 100)
+        SELECT * FROM  porto_100_destination;  
+--- B) Indeces on origin
+CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(pt_id);
+CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(net_id);
+CREATE INDEX weight_sampling_100_origin_idx_the_geom ON weight_sampling_100_origin USING gist(the_geom);
+--- Indeces on destination
+CREATE INDEX weight_sampling_100_destination_post_idx_pt_id ON weight_sampling_100_destination_post USING btree(pt_id);
+CREATE INDEX weight_sampling_100_destination_post_idx_net_id ON weight_sampling_100_destination_post USING btree(net_id);
+CREATE INDEX weight_sampling_100_destination_post_idx_the_geom ON weight_sampling_100_destination_post USING gist(the_geom);
+---- Indexes on origin
+CREATE INDEX weight_sampling_100_origin_post_idx_pt_id ON weight_sampling_100_origin_post USING btree(pt_id);
+CREATE INDEX weight_sampling_100_origin_post_idx_net_id ON weight_sampling_100_origin_post USING btree(net_id);
+CREATE INDEX weight_sampling_100_origin_post_idx_the_geom ON weight_sampling_100_origin_post USING gist(the_geom);
+---- Index on the new network
+CREATE INDEX prueba_largest_network_post_idx_GEOM ON prueba_largest_network_post USING gist(the_geom);
+CREATE INDEX prueba_largest_network_post_idx_id ON prueba_largest_network_post USING btree(id);
+CREATE INDEX prueba_largest_network_post_idx_target ON prueba_largest_network_post USING btree(target);
+CREATE INDEX prueba_largest_network_post_idx_source ON prueba_largest_network_post USING btree(source);
+CREATE INDEX prueba_largest_network_post_idx_cost ON prueba_largest_network_post USING btree(cost);
+---- Cluster 
+CLUSTER prueba_largest_network_post USING prueba_largest_network_post_idx_GEOM;
+---- Vacuum clean
+VACUUM(full, ANALYZE) weight_sampling_100_origin;
+VACUUM(full, ANALYZE) weight_sampling_100_destination;
+VACUUM(full, ANALYZE) porto_alegre_net_largest;    
 
 ```
+
 
 #### Selecting point of interest (Hospitals)
 
@@ -1713,3 +1723,62 @@ LEFT JOIN
 ### Assesing vulnerability based on socioeconomic indicators
 
 ## Verifying results
+
+
+```{sql}
+#| eval: false
+#| code-summary: Nicht wichtig, vieliecht weg lassen.
+
+
+---- add ID
+ALTER TABLE od_77763
+ADD COLUMN id serial;
+---- Rename the column name
+ALTER TABLE od_77763
+rename "GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0" 
+to "build";
+---- create spatial index
+CREATE INDEX idx_od_77763_geom ON od_77763
+       USING gist(geometry);
+CREATE INDEX idx_od_77763_id on weighted_sampling
+       USING btree(id);
+CREATE INDEX idx_od_77763_geom_build on weighted_sampling 
+       USING btree("build");
+---- The current total is 77763
+
+----
+CREATE TABLE od_40420_snapped_origin AS
+SELECT DISTINCT ON (net.id)
+	   pt.id AS pt_id,
+	   net.id AS net_id,
+	   net.the_geom
+FROM 
+(select * 
+FROM 
+	od_77763 as pt) as pt
+CROSS JOIN
+LATERAL (SELECT
+		* 
+		FROM porto_alegre_net_largest_vertices_pgr AS net
+		 ORDER BY net.the_geom <-> pt.geometry 
+		LIMIT 1) AS net;
+----
+
+CREATE TABLE od_40420_snapped_destination AS
+SELECT DISTINCT ON (net.id)
+	   pt.id AS pt_id,
+	   net.id AS net_id,
+	   net.the_geom
+FROM 
+(select * 
+FROM 
+	od_77763 as pt) as pt
+CROSS JOIN
+LATERAL (SELECT
+		* 
+		FROM porto_alegre_net_largest_vertices_pgr AS net
+		 ORDER BY net.the_geom <-> pt.geometry 
+		LIMIT 1) AS net;
+
+```
+

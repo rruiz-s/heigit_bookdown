@@ -1,8 +1,10 @@
 {
-  "hash": "f8da1f91cbe47789f0c052c6fd1d2659",
+  "hash": "0423c7ab1a102c562bffd146085602cc",
   "result": {
-    "markdown": "::: {.cell}\n\n:::\n\n\n# Conclussion\n## Framework\n## Data\n\n\n::: {.cell}\n\n:::\n\n\n## Sampling points\n## Network",
-    "supporting": [],
+    "markdown": "::: {.cell}\n\n:::\n\n\n# Conclussion\nKey variables:\n- Centrality ---> vulnerability-resilience\n- Accessibility ----> vulnerability-resilience",
+    "supporting": [
+      "conclussion_files"
+    ],
     "filters": [
       "rmarkdown/pagebreak.lua"
     ],
