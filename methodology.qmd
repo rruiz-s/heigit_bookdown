@@ -1041,7 +1041,7 @@ DBI::dbWriteTable(connection,
                   od)
 ```
 
-After creating an ID for the samples, a neighbor nearest function snapped these points into the closest node of the network. Subsequently, 
+After creating an ID for the samples, a neighbor nearest function snapped these points into the closest node of the network. Subsequently, two table subset stored a subset of 100 points for origin and destination due to the path computation costs, since the costs fom the Dijkstra algorithm used in pgrouting are reported as very high [@brandes_faster_2001]. Indexes applied on these created tables that contained the OD matrix speed up further queries. This sampling process repeated twice for the pre-flooding and post-flooding scenario generated the OD matrix required to assess the centrality of both networks.
 
 ```{sql}
 #| eval: false
@@ -1068,7 +1068,7 @@ LATERAL (SELECT
         FROM porto_alegre_net_largest_vertices_pgr AS net
          ORDER BY net.the_geom <-> pt.geometry 
         LIMIT 1) AS net;
---- 1.2) Limiting to 100 origin samples in the pre flooding event
+--- 1.2) Limiting to 100 origin points in the pre flooding event
 
 CREATE TABLE weight_sampling_100_origin  AS
 WITH porto_100_origin AS (
@@ -1079,7 +1079,7 @@ WITH porto_100_origin AS (
         ORDER BY random() LIMIT 100)
         SELECT * FROM  porto_100_origin;  
         
---- 1.3) Create 100 destination from the snapped points in the pre flooding event
+--- 1.3) Limiting to 100 destination in the pre flooding event
 CREATE TABLE weight_sampling_100_destination  AS
 WITH porto_100_destination AS (
         SELECT
@@ -1166,14 +1166,16 @@ VACUUM(full, ANALYZE) porto_alegre_net_largest;
 
 ```
 
-
 #### Selecting point of interest (Hospitals)
+
+The bounding box containing the GHS settlement that intersected with Porto Alegre filtered the Hospitals from Rio Grande do Sul. Similarly to previous sampling, a closest neighbor query snapped the location of these hospitals to the closest vertices of the network. Hospitals and other healthcare facilities were the objects of previous studies focused on accessibility [@geldsetzer_mapping_2020-1 ; @sushma_finding_2021]. The following query provided the table of  healthcare facilities affected by the flooding, which were the destination of the OD matrix and required to assess their accessibility.
+
 
 ```{sql}
 #| eval: false
 #| code-summary: "PostGIS: Selecting hospistals in the AoI and snapping"
 
---- Create a table with the bounding box that contains Porto Alegre + GHS
+--- Creating a table with the bounding box that contains Porto Alegre + GHS
 CREATE TABLE porto_alegre_bbox AS
 WITH porto_alegre_ghs AS(
     SELECT 
@@ -1210,6 +1212,7 @@ SELECT DISTINCT ON (h.cd_cnes)
     h.geom AS geom_hospital,
     f.the_geom AS geom_node
 FROM hospital_rs_porto h
+---- Snapping the hospitals to the closest vertices in the network
 LEFT JOIN LATERAL
 (SELECT 
     id, 
@@ -1224,91 +1227,52 @@ LIMIT 1) AS f ON true
 CREATE INDEX idx_hospital_rs_node_v2 ON hospital_rs_node_v2 USING btree(id);
 ```
 
-```{=html}
+###  Carrying out centrality analysis
 
-<iframe width="760" height="500" src="/media/map_sampling_example_v0.html" title = "Inspect of the components in the graph network "></iframe>
-```
+The graph network obtained from OpenRouteService provided the vertices, edges and weight required for the function pgr_dijkstra. The variable toid and fromid represented the source and target, while weight was the cost. After including this information in the function, the OD matrix included as two arrays completed the required inputs to run the dijkstra algorithm.  The table 1 shown the data from this graph network without including the geometry.
+
 ```{r}
-#| message: false
-#| warning: false
-#| code-summary: "R: Visualizing regular and weighted sampling"
-#| eval: false
-
-## Crop and Reproject
-## gdalwarp -te -4850853.201784615 -3737074.296348413 -4616291.881935796 -3495378.804761388 GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0.tif GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V
-## gdalwarp -t_srs "EPSG:4326" GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0_RioGrandeDoSul.tif GHS_BUILT_V_E2020_GLOBE_R2023A_4326_100_V1_0_RioGrandeDoSul.tif
-pal <- mapview::mapviewPalette("mapviewTopoColors")
-ghs_build <- stack("/home/ricardo/heigit_bookdown/data/GHS_BUILT_V_E2020_GLOBE_R2023A_4326_100_V1_0_RioGrandeDoSul.tif")
-ghs_smod <- stack("/home/ricardo/heigit_bookdown/data/GHS_SMOD_E2020_GLOBE_R2023A_4326_1000_V2_0_RioGrandeDoSul.tif")
-ghs_smod_terra <- terra::rast("/home/ricardo/heigit_bookdown/data/GHS_SMOD_E2020_GLOBE_R2023A_4326_1000_V2_0_RioGrandeDoSul.tif")
-regular_sampling <- st_read("/home/ricardo/heigit_bookdown/data/random_points_snapped.geojson")
-regular_sampling_100 <- sample_n(regular_sampling, size = 100)
-weighted_sampling_origin <- st_read(eisenberg_connection,"weight_sampling_100_origin")
-weighted_sampling_destination <- st_read(eisenberg_connection,"weight_sampling_100_destination")
-
-weighted_sampling_origin$sample <- "origin"
-weighted_sampling_destination$sample <- "destination"
-weighted_sampling_both <- rbind(weighted_sampling_origin,
-                           weighted_sampling_destination )
-
-weighted_sampling <- weighted_sampling_both |> mutate(sample = as.factor(weighted_sampling$sample))
-
-poi_hospital <- st_read(eisenberg_connection,"hospital_rs_node_v2")
-m <- matrix(c(
-     0, 10, NA,   # Values >= 0 and <= 10 become 0
-     10, 13, 1,  # Values > 10 and <= 21 become 1
-     13, 29, 2,  # Values > 21 and <= 29 become 2
-     30, 30, 3   # Values == 30 become 3
- ), ncol = 3, byrow = TRUE)
-## Classify using the correct matrix
-rc2 <- classify(ghs_smod_terra, m, include.lowest=TRUE)
-rc2_factor <- as.factor(rc2)
-levels(rc2_factor) <- data.frame(
-  ID = 1:3,    # These should match the values in the classification
-  category = c("Rural: 10-13", "Suburban: 13-29", "Urban Center: 30")
-)
-category_colors <- c("#008f44","#dedb96", "#cc9152")
-mapview(ghs_build[[1]],
-        layer.name ="Built-up volume",
-        col.regions = pal(100),
-        alpha.regions= 0.45,
-        hide=TRUE) +
-mapview(ghs_smod[[1]],
-        layer.name = "Settlement classification",
-        col.regions = pal(100),
-        alpha.regions= 0.35,
-        hide=TRUE) +
-mapview(weighted_sampling,
-        layer.name="Weighted samples",
-        zcol="sample",
-        col.regions=c("#2D5CA4","#00A3A0"),
-        hide=TRUE,
-        cex= 3) +
-mapview(regular_sampling_100,
-        color = "darkgray",
-        col.regions="darkgray",
-        cex= 3,
-        legend= FALSE,
-        hide=TRUE) +
-mapview(subset(poi_hospital,
-               select=c("cd_cnes",
-                        "ds_cnes",
-                        "id",
-                        "geom_hospital")),
-                layer.name = "POI - Hospitals",
-                color= "darkred",
-        col.regions="#CA2334",
-               popup=popupTable(poi_hospital, zcol=c("cd_cnes","ds_cnes","id")))
-
+#| echo: false
+porto_alegre_net_pre_ors <- st_read(eisenberg_connection, "porto_alegre_net_pre_ors") |> sf::st_drop_geometry() |> slice(1:30)
+DT::datatable(subset(porto_alegre_net_pre_ors, select=c("ogc_fid","toid","fromid","weight")), class='compact', rownames=FALSE, escape= FALSE, caption = 'One of the output from OpenRouteService (ORS) representing the graph network',
+               options=list(
+                   dom="Bfrtip",
+                  pageLength=5,
+                   initComplete = JS(
+                       "function(settings, json) {",
+                       "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+                       "}")
+               )
+ ) 
 ```
 
-### Calculating Sum Edge Betweenness
+The table generated included the ogc_fid variable making possible to join original geometry from the graph network table.  This table contained all the shortest paths, where on the one hand, the variables start_vid and end_vid were the source (fromid) and destination (toid) from the original OD matrix. On the other hand, edge indicated the edge id from the graph network. 
+
+```{r}
+#| echo: false
+dijkstra_resulting_table_pre <- DBI::dbReadTable(eisenberg_connection, "dijkstra_resulting_table_pre_subset")
+DT::datatable(dijkstra_resulting_table_pre, class='compact', rownames=FALSE, escape= FALSE, caption = 'Output from the pgr_dijkstra function showing the shortest paths for OD matrix',
+               options=list(
+                   dom="Bfrtip",
+                  pageLength=5,
+                   initComplete = JS(
+                       "function(settings, json) {",
+                       "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+                       "}")
+               )
+ ) 
+```
+
+#### Assessing network centrality
+
+The aggregated count of these shortest path determined the centrality of each segment. A further processing required was to use group these values by the bidirectid, obtaining the final betweenness centrality value. This process applied to the pre-disaster and post-disaster network using the two OD matrix allowed to compare the change of the betweenness centrality.  
 
 ```{sql}
 #| eval: false
 #| code-summary: "PostGIS: Calculating edge betweenness centrality on the pre-disaster network"
 
---- Pre-scenario
+--- 1) Pre-disaster network
+--- 1.1) Creating centrality 
  CREATE TABLE centrality_100_100_dijkstra AS
  SELECT   b.id,
  b.the_geom,
@@ -1325,9 +1289,6 @@ mapview(subset(poi_hospital,
                       ON j.edge = b.id
                       GROUP BY  b.id, b.the_geom
                       ORDER BY centrality DESC;  
-                      
-                     
-                     select * from porto_alegre_net_largest ;
 ---- Adding the bidirectid by joining the dijkstra table with the original
 CREATE TABLE centrality_weighted_100_bidirect AS
 SELECT t1.*,
@@ -1378,13 +1339,7 @@ on
     t1.id = t2.id;
 --- The final product is: centrality_weighted_100_bidirect_cleaned
 
-```
-
-```{sql}
-#| eval: false
-#| code-summary: "PostGIS: Calculating edge betweenness centrality on the post-disaster network"
-
---- Post scenario
+--- 2) Post scenario
 
 ----routing
  CREATE TABLE centrality_100_100_dijkstra_post AS
@@ -1454,7 +1409,28 @@ on
 
 ```
 
-#### Para hospitales
+```{r}
+#| echo: false
+centrality_post <- st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned_post") |> st_drop_geometry() |> mutate(cost=round(cost))
+
+DT::datatable(subset(centrality_post, select=c("bidirectid","id","source","target","centrality","cost")), class='compact', rownames=FALSE, escape= FALSE, caption = 'Centrality analysis on network groupped by bidirectid',
+              extensions="Buttons",
+                         options=list(
+                           dom="Bfrtip",
+                           pageLength=5,
+                           buttons=c("copy","csv","pdf"),
+                            initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+    "}")
+                                  )
+              ) 
+```
+
+
+#### Asessing hospitales centrality
+
+
 
 ```{sql}
 #| eval: false
@@ -1500,152 +1476,8 @@ EXPLAIN ANALYZE
 
 ```
 
-#### Edge betweenness
-
-```{sql}
-#| eval: false
-#| connection: eisenberg_connection
-
-CREATE TABLE od_40420_snapped_origin AS
-SELECT DISTINCT ON (net.id)
-       pt.id AS pt_id,
-       net.id AS net_id,
-       net.the_geom
-FROM 
-(select * 
-FROM 
-    od_77763 as pt) as pt
-CROSS JOIN
-LATERAL (SELECT
-        * 
-        FROM porto_alegre_net_largest_vertices_pgr AS net
-         ORDER BY net.the_geom <-> pt.geometry 
-        LIMIT 1) AS net;
-
-```
-
-```{sql}
-#| eval: false
-#| connection: eisenberg_connection
-
-CREATE TABLE random_272_destination  AS
-with random_272_destination AS (
-        SELECT
-            * 
-        FROM 
-            od_40420_snapped_origin 
-        ORDER BY random() LIMIT 200)
-        SELECT * FROM  random_272_destination;  
-
-```
-
-```{sql}
-#| eval: false
-#| connection: eisenberg_connection
-
-CREATE TEMP TABLE vertices_lookup_v5 
-AS             
-WITH all_pairs AS (
-  SELECT f.net_id AS fid, f.the_geom as fgeom,
-         t.net_id AS tid, t.the_geom as tgeom
-    FROM random_272_origin AS f,
-         random_272_destination AS t
-),
-vertices AS (
-  SELECT fid, tid,
-     (SELECT id
-        FROM porto_alegre_net_largest_vertices_pgr AS way
-       ORDER BY way.the_geom <-> fgeom
-       LIMIT 1) as fv,
-     (SELECT id
-        FROM porto_alegre_net_largest_vertices_pgr AS way
-       ORDER BY way.the_geom <-> tgeom
-       LIMIT 1) as tv
-  FROM all_pairs
-)
-SELECT * FROM vertices;
-
-```
-
-```{sql}
-#| eval: false
-#| connection: eisenberg_connection
-
-CREATE TABLE porto_272_272_dijkstra AS
- WITH pgr_result AS (
-   SELECT pgr_dijkstra('SELECT id,
-           source,
-    target,
-     cost FROM porto_alegre_net_largest',
-     array_agg(fv), array_agg(tv), 
-     directed := true
-   ) FROM vertices_lookup_v5
- )
-SELECT (pgr_dijkstra).*, a.fid, a.tid FROM pgr_result
-JOIN vertices_lookup_v5 a
-ON (pgr_dijkstra).start_vid = a.fv
-AND (pgr_dijkstra).end_vid = a.tv;
-
-```
-
-```{sql}
-#| eval: false
-#| connection: eisenberg_connection
-
-CREATE TEMP TABLE vertices_lookup_v5                     
-AS             
-WITH all_pairs AS (
-  SELECT f.net_id AS fid, f.the_geom as fgeom,
-         t.net_id AS tid, t.the_geom as tgeom
-    FROM random_272_origin AS f,                                                                      
-         random_272_destination AS t               
-),                                                                                     
-vertices AS (
-  SELECT fid, tid,
-     (SELECT id
-        FROM porto_alegre_net_largest_vertices_pgr AS way
-       ORDER BY way.the_geom <-> fgeom
-       LIMIT 1) as fv,
-     (SELECT id
-        FROM porto_alegre_net_largest_vertices_pgr AS way
-       ORDER BY way.the_geom <-> tgeom
-       LIMIT 1) as tv
-  FROM all_pairs
-)
-SELECT * FROM vertices;
-
-```
-
-```{sql}
-#| eval: false
-#| connection: eisenberg_connection
-
-
-CREATE TEMP TABLE vertices_lookup_v5                     
-AS             
-WITH all_pairs AS (
-  SELECT f.net_id AS fid, f.the_geom as fgeom,
-         t.net_id AS tid, t.the_geom as tgeom
-    FROM random_272_origin AS f,                                                                      
-         random_272_destination AS t               
-),                                                                                     
-vertices AS (
-  SELECT fid, tid,
-     (SELECT id
-        FROM porto_alegre_net_largest_vertices_pgr AS way
-       ORDER BY way.the_geom <-> fgeom
-       LIMIT 1) as fv,
-     (SELECT id
-        FROM porto_alegre_net_largest_vertices_pgr AS way
-       ORDER BY way.the_geom <-> tgeom
-       LIMIT 1) as tv
-  FROM all_pairs
-)
-SELECT * FROM vertices;
-
-```
-
-### Calculating closeness
+### Carrying out accessibility analysis
+#### Asessing hospitals accessibility
 
 ```{sql}
 #| eval: false
@@ -1717,18 +1549,196 @@ FROM
 	clossness_hospital_porto AS pre
 LEFT JOIN 
 	clossness_hospital_porto_post AS post ON pre.cd_cnes  = post.cd_cnes
+----- V2
+------ PRE-EVENT
+---- Based on a max of 100*100 / 22 = 454   
+SELECT count(*) FROM hospital_rs_node_v2;  --- 22 POI: Hospitals 
+----- Create origin   
+CREATE TABLE weight_sampling_454_origin  AS
+WITH porto_454_origin AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped 
+        ORDER BY random() 
+        LIMIT 454)
+SELECT * FROM  porto_454_origin;
 
+--- Create destinations in this case hospitals
+CREATE TABLE hospital_rs_destination AS
+SELECT 
+    cd_cnes,
+    ds_cnes,
+    id,
+    geom_node
+FROM 
+    hospital_rs_node_v2;  --- 22 POI: Hospitals    
+    
+---- Create hospitald destinations from closeness 
+CREATE TABLE hospital_rs_destination AS
+WITH clossness_hospital_porto_id AS (
+SELECT 
+    n.*,
+    v.id
+FROM 
+    clossness_hospital_porto AS n
+JOIN
+    porto_alegre_net_largest_vertices_pgr AS v
+    ON  st_intersects(n.geom_node, v.the_geom))
+SELECT 
+    cd_cnes,
+    ds_cnes,
+    id,
+    closeness,
+    geom_node
+FROM 
+    clossness_hospital_porto_id;    
+---- Create index for origin
+CREATE INDEX weight_sampling_454_origin_net_id ON weight_sampling_454_origin USING hash(net_id);
+CREATE INDEX weight_sampling_454_origin_geom ON weight_sampling_454_origin USING gist(the_geom);
+---- Create index for destination
+CREATE INDEX hospital_rs_destination_net_id ON hospital_rs_destination USING btree(id);
+CREATE INDEX hospital_rs_destination_geom ON hospital_rs_destination USING gist(geom_node);
+---- Cluster
+CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
+---- Vacuum clean
+VACUUM(full, ANALYZE) weight_sampling_454_origin;
+VACUUM(full, ANALYZE) hospital_rs_destination;
+VACUUM(full, ANALYZE) porto_alegre_net_largest;
+---- Running the query
+EXPLAIN ANALYZE
+ CREATE TABLE centrality_424_hospitals_porto_end_id_centrality AS
+ SELECT   
+ b.vid,
+ j.end_id,
+ b.the_geom,
+ count(the_geom) as centrality 
+ FROM  pgr_dijkstra('SELECT  id,
+                             source,
+                            target,
+                            cost
+                      FROM porto_alegre_net_largest',
+                      ARRAY(SELECT net_id AS origin_id FROM weight_sampling_454_origin),
+                      ARRAY(SELECT id AS destination_id FROM hospital_rs_destination),
+                      directed := TRUE) j
+                      left JOIN porto_alegre_net_largest AS b
+                      ON j.edge = b.id
+                      GROUP BY  b.id, j.end_vid, b.the_geom
+                      ORDER BY centrality DESC;  
+ ---- Group by end_vid that represent destination
+select * from hospital_rs_destination ;
+                     
+SELECT * FROM centrality_424_hospitals_porto_end_id_centrality;                      
+SELECT 
+    centrality.end_vid,
+    hospitals.cd_cnes,
+    hospitals.ds_cnes,
+    count(centrality.the_geom)::int AS sum_centrality,
+    max(st_length(centrality.the_geom::geography))::int AS length
+FROM 
+    centrality_424_hospitals_porto_end_id_centrality AS centrality
+LEFT JOIN 
+    hospital_rs_destination AS hospitals ON  centrality.end_vid = hospitals.id 
+GROUP BY end_vid, cd_cnes, ds_cnes;
+### Post-scenario
+
+SELECT count(*) FROM hospital_rs_node_v2;  --- 22 POI: Hospitals 
+----- Create origin   
+CREATE TABLE weight_sampling_454_origin_post  AS
+WITH porto_454_origin_post AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_post 
+        ORDER BY random() 
+        LIMIT 454)
+SELECT * FROM  porto_454_origin_post;
+
+--- Create destinations in this case hospitals
+CREATE TABLE hospital_rs_destination AS
+SELECT 
+    cd_cnes,
+    ds_cnes,
+    id,
+    geom_node
+FROM 
+    hospital_rs_node_v2;  --- 22 POI: Hospitals    
+    
+---- Create hospitald destinations from closeness 
+CREATE TABLE hospital_rs_destination AS
+WITH clossness_hospital_porto_id AS (
+SELECT 
+    n.*,
+    v.id
+FROM 
+    clossness_hospital_porto AS n
+JOIN
+    porto_alegre_net_largest_vertices_pgr AS v
+    ON  st_intersects(n.geom_node, v.the_geom))
+SELECT 
+    cd_cnes,
+    ds_cnes,
+    id,
+    closeness,
+    geom_node
+FROM 
+    clossness_hospital_porto_id;    
+---- Create index for origin
+
+CREATE INDEX weight_sampling_454_origin_net_id ON weight_sampling_454_origin_post USING hash(net_id); 
+CREATE INDEX weight_sampling_454_origin_geom ON weight_sampling_454_origin_post USING gist(the_geom);
+---- Create index for destination
+CREATE INDEX hospital_rs_destination_net_id ON hospital_rs_destination USING btree(id);
+CREATE INDEX hospital_rs_destination_geom ON hospital_rs_destination USING gist(geom_node);
+---- Cluster
+CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
+---- Vacuum clean
+VACUUM(full, ANALYZE) weight_sampling_454_origin_post;
+VACUUM(full, ANALYZE) hospital_rs_destination;
+VACUUM(full, ANALYZE) prueba_largest_network_post;
+---- Running the query
+EXPLAIN ANALYZE
+ CREATE TABLE centrality_424_hospitals_porto_end_id_centrality_post AS
+ SELECT   
+ b.ogc_fid,
+ j.end_vid,
+ b.the_geom,
+ count(the_geom) as centrality 
+ FROM  pgr_dijkstra('SELECT  ogc_fid AS id,
+                             fromid AS source,
+                            toid AS target,
+                            weight AS cost
+                      FROM prueba_largest_network_post',
+                      ARRAY(SELECT net_id AS origin_id FROM weight_sampling_454_origin_post),
+                      ARRAY(SELECT id AS destination_id FROM hospital_rs_destination),
+                      directed := TRUE) j
+                      left JOIN prueba_largest_network_post AS b
+                      ON j.edge = b.ogc_fid
+                      GROUP BY  b.ogc_fid, j.end_vid, b.the_geom
+                      ORDER BY centrality DESC;  
+ ---- Group by end_vid that represent destination
+CREATE TABLE centrality_424_hospitals_porto_end_id_centrality_post_group AS
+SELECT 
+    centrality.end_vid,
+    hospitals.cd_cnes,
+    hospitals.ds_cnes,
+    max(centrality.centrality)::int AS max_centrality,
+    max(st_length(centrality.the_geom::geography))::int AS length
+FROM 
+    centrality_424_hospitals_porto_end_id_centrality_post AS centrality
+LEFT JOIN 
+    hospital_rs_destination AS hospitals ON  centrality.end_vid = hospitals.id 
+GROUP BY end_vid, cd_cnes, ds_cnes;
 ```
 
 ### Assesing vulnerability based on socioeconomic indicators
 
-## Verifying results
+## Validating results
 
 
 ```{sql}
 #| eval: false
 #| code-summary: Nicht wichtig, vieliecht weg lassen.
-
 
 ---- add ID
 ALTER TABLE od_77763

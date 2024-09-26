@@ -309,3 +309,147 @@ SELECT max(centrality) FROM centrality_10_10_porto_astrar ;
 SELECT  count(*) FROM centrality_10_10_porto_astrar;
 ```
 
+
+
+```{sql}
+#| eval: false
+#| connection: eisenberg_connection
+
+CREATE TABLE od_40420_snapped_origin AS
+SELECT DISTINCT ON (net.id)
+       pt.id AS pt_id,
+       net.id AS net_id,
+       net.the_geom
+FROM 
+(select * 
+FROM 
+    od_77763 as pt) as pt
+CROSS JOIN
+LATERAL (SELECT
+        * 
+        FROM porto_alegre_net_largest_vertices_pgr AS net
+         ORDER BY net.the_geom <-> pt.geometry 
+        LIMIT 1) AS net;
+
+```
+
+```{sql}
+#| eval: false
+#| connection: eisenberg_connection
+
+CREATE TABLE random_272_destination  AS
+with random_272_destination AS (
+        SELECT
+            * 
+        FROM 
+            od_40420_snapped_origin 
+        ORDER BY random() LIMIT 200)
+        SELECT * FROM  random_272_destination;  
+
+```
+
+```{sql}
+#| eval: false
+#| connection: eisenberg_connection
+
+CREATE TEMP TABLE vertices_lookup_v5 
+AS             
+WITH all_pairs AS (
+  SELECT f.net_id AS fid, f.the_geom as fgeom,
+         t.net_id AS tid, t.the_geom as tgeom
+    FROM random_272_origin AS f,
+         random_272_destination AS t
+),
+vertices AS (
+  SELECT fid, tid,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> fgeom
+       LIMIT 1) as fv,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> tgeom
+       LIMIT 1) as tv
+  FROM all_pairs
+)
+SELECT * FROM vertices;
+
+```
+
+```{sql}
+#| eval: false
+#| connection: eisenberg_connection
+
+CREATE TABLE porto_272_272_dijkstra AS
+ WITH pgr_result AS (
+   SELECT pgr_dijkstra('SELECT id,
+           source,
+    target,
+     cost FROM porto_alegre_net_largest',
+     array_agg(fv), array_agg(tv), 
+     directed := true
+   ) FROM vertices_lookup_v5
+ )
+SELECT (pgr_dijkstra).*, a.fid, a.tid FROM pgr_result
+JOIN vertices_lookup_v5 a
+ON (pgr_dijkstra).start_vid = a.fv
+AND (pgr_dijkstra).end_vid = a.tv;
+
+```
+
+```{sql}
+#| eval: false
+#| connection: eisenberg_connection
+
+CREATE TEMP TABLE vertices_lookup_v5                     
+AS             
+WITH all_pairs AS (
+  SELECT f.net_id AS fid, f.the_geom as fgeom,
+         t.net_id AS tid, t.the_geom as tgeom
+    FROM random_272_origin AS f,                                                                      
+         random_272_destination AS t               
+),                                                                                     
+vertices AS (
+  SELECT fid, tid,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> fgeom
+       LIMIT 1) as fv,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> tgeom
+       LIMIT 1) as tv
+  FROM all_pairs
+)
+SELECT * FROM vertices;
+
+```
+
+```{sql}
+#| eval: false
+#| connection: eisenberg_connection
+
+
+CREATE TEMP TABLE vertices_lookup_v5                     
+AS             
+WITH all_pairs AS (
+  SELECT f.net_id AS fid, f.the_geom as fgeom,
+         t.net_id AS tid, t.the_geom as tgeom
+    FROM random_272_origin AS f,                                                                      
+         random_272_destination AS t               
+),                                                                                     
+vertices AS (
+  SELECT fid, tid,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> fgeom
+       LIMIT 1) as fv,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> tgeom
+       LIMIT 1) as tv
+  FROM all_pairs
+)
+SELECT * FROM vertices;
+
+```

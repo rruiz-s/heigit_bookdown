@@ -1,7 +1,7 @@
 # Results
 
 Key variables:
-- Centrality ---> vulnerability-resilience
+- Centrality --->  connectivity
 - Accessibility ----> vulnerability-resilience
 
 ```{r}
@@ -30,17 +30,96 @@ flooding <- sf::st_read("~/heigit_bookdown/data/flooding_porto.geojson")
 ## Data preparation
 ### OSM & ORS data
 
-The code @lst-ghs-osmium covered the following area:
+
 
 ```{r}
 #| eval: false
+#| code-summary: "PostGIS: Result from the responsive code to import OSM"
 # Osmium command
 osmium extract -b -51.2791,-30.1722,-50.9407,-29.8048 sul-240501.osm.pbf -o puerto_alegre_urban_center.osm.pbf
 ```
 
-![](/media/bbox_porto_alegre_ghs.png){fig-align="center" width="50%"}
-### Network
-#### Post-event
+
+
+```{=html}
+
+<iframe width="760" height="500" src="/media/map_sampling_example_v0.html" title = "Inspect of the components in the graph network "></iframe>
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| code-summary: "R: Visualizing regular and weighted sampling"
+#| eval: false
+
+## Crop and Reproject
+## gdalwarp -te -4850853.201784615 -3737074.296348413 -4616291.881935796 -3495378.804761388 GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0.tif GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V
+## gdalwarp -t_srs "EPSG:4326" GHS_BUILT_V_E2020_GLOBE_R2023A_54009_100_V1_0_RioGrandeDoSul.tif GHS_BUILT_V_E2020_GLOBE_R2023A_4326_100_V1_0_RioGrandeDoSul.tif
+pal <- mapview::mapviewPalette("mapviewTopoColors")
+ghs_build <- stack("/home/ricardo/heigit_bookdown/data/GHS_BUILT_V_E2020_GLOBE_R2023A_4326_100_V1_0_RioGrandeDoSul.tif")
+ghs_smod <- stack("/home/ricardo/heigit_bookdown/data/GHS_SMOD_E2020_GLOBE_R2023A_4326_1000_V2_0_RioGrandeDoSul.tif")
+ghs_smod_terra <- terra::rast("/home/ricardo/heigit_bookdown/data/GHS_SMOD_E2020_GLOBE_R2023A_4326_1000_V2_0_RioGrandeDoSul.tif")
+regular_sampling <- st_read("/home/ricardo/heigit_bookdown/data/random_points_snapped.geojson")
+regular_sampling_100 <- sample_n(regular_sampling, size = 100)
+weighted_sampling_origin <- st_read(eisenberg_connection,"weight_sampling_100_origin")
+weighted_sampling_destination <- st_read(eisenberg_connection,"weight_sampling_100_destination")
+
+weighted_sampling_origin$sample <- "origin"
+weighted_sampling_destination$sample <- "destination"
+weighted_sampling_both <- rbind(weighted_sampling_origin,
+                           weighted_sampling_destination )
+
+weighted_sampling <- weighted_sampling_both |> mutate(sample = as.factor(weighted_sampling$sample))
+
+poi_hospital <- st_read(eisenberg_connection,"hospital_rs_node_v2")
+m <- matrix(c(
+     0, 10, NA,   # Values >= 0 and <= 10 become 0
+     10, 13, 1,  # Values > 10 and <= 21 become 1
+     13, 29, 2,  # Values > 21 and <= 29 become 2
+     30, 30, 3   # Values == 30 become 3
+ ), ncol = 3, byrow = TRUE)
+## Classify using the correct matrix
+rc2 <- classify(ghs_smod_terra, m, include.lowest=TRUE)
+rc2_factor <- as.factor(rc2)
+levels(rc2_factor) <- data.frame(
+  ID = 1:3,    # These should match the values in the classification
+  category = c("Rural: 10-13", "Suburban: 13-29", "Urban Center: 30")
+)
+category_colors <- c("#008f44","#dedb96", "#cc9152")
+mapview(ghs_build[[1]],
+        layer.name ="Built-up volume",
+        col.regions = pal(100),
+        alpha.regions= 0.45,
+        hide=TRUE) +
+mapview(ghs_smod[[1]],
+        layer.name = "Settlement classification",
+        col.regions = pal(100),
+        alpha.regions= 0.35,
+        hide=TRUE) +
+mapview(weighted_sampling,
+        layer.name="Weighted samples",
+        zcol="sample",
+        col.regions=c("#2D5CA4","#00A3A0"),
+        hide=TRUE,
+        cex= 3) +
+mapview(regular_sampling_100,
+        color = "darkgray",
+        col.regions="darkgray",
+        cex= 3,
+        legend= FALSE,
+        hide=TRUE) +
+mapview(subset(poi_hospital,
+               select=c("cd_cnes",
+                        "ds_cnes",
+                        "id",
+                        "geom_hospital")),
+                layer.name = "POI - Hospitals",
+                color= "darkred",
+        col.regions="#CA2334",
+               popup=popupTable(poi_hospital, zcol=c("cd_cnes","ds_cnes","id")))
+
+```
+
 
 ```{sql}
 #| connection: eisenberg_connection
@@ -228,6 +307,7 @@ connectivity metrics?
 
 ```{r}
 #| eval: false
+#| code-summary: "R: Visualizing changes of centrality on the network before and after the flooding calculated with pgrouting"
 
 ### natural breaks
 #### For pre-event: 1644, 468, 142
@@ -269,11 +349,12 @@ centrality_pre_map | centrality_post_map + mapview(flooding,
 
 ```
 
-Meter tabla que incluye georefernciar
+GEoref
 
 ```{r}
 #| message: false
 #| warning: false
+#| code-summary: "R: Table of the most central road segments georeferenced"
 #| eval: false
 
 
@@ -362,11 +443,12 @@ DT::datatable(subset(df_centrality_negative_outlier_distinct_address, select=c("
 <iframe width="760" height="500" src="/media/centrality_table_results.html" title = "Sum Edge Betweenness in the Urban Settlement located in Porto Alegre "></iframe>
 
 ```
-Meter gráfica
+
 
 ```{r}
 #| warming: false
 #| message: false
+#| code-summary: "R: Histogram of betweenness centrality calculated with pgrouting"
 
 library(plyr)
 # Tidy data and wrangling
@@ -385,14 +467,15 @@ ggplot(centrality_both, aes(x=centrality, fill=event)) +
                       y = "Frequency (count)") +
   theme(plot.title=element_text(family ="bold", hjust=0.5),
         plot.subtitle = element_text(colour="#626262", hjust=0.5),
-        legend.position='bottom')
+        legend.position='bottom') +
+    theme_minimal()
 ```
 
 
 ```{r}
-## Import
 #| warming: false
 #| message: false
+#| code-summary: "R: Betweenness centrality values grouped by their quantiles calculated with pgrouting "
 
 df_centrality_pre <- centrality_pre |>
                         sf::st_drop_geometry() |>
@@ -421,7 +504,7 @@ df_centrality_both_barplot_cat <- na.omit(df_centrality_both_barplot) |>
 barplot_event_cat_sum <- df_centrality_both_barplot_cat |> 
                           dplyr::group_by(event, centrality_cat) |>
                            dplyr::summarise(sum_centrality = sum(centrality))
-#basic plot
+# basic plot
  barplot_event_cat_sum |>  
   ggplot(aes(x=centrality_cat,
               y=sum_centrality,
@@ -433,7 +516,8 @@ barplot_event_cat_sum <- df_centrality_both_barplot_cat |>
        y = "Sum of edge betweenness") +
   theme(plot.title=element_text(family ="bold", hjust=0.5),
         plot.subtitle = element_text(colour="#626262", hjust=0.5),
-        legend.position='bottom')
+        legend.position='bottom') +
+     theme_minimal()
 
 ```
 
@@ -443,6 +527,7 @@ barplot_event_cat_sum <- df_centrality_both_barplot_cat |>
 #| message: false
 #| eval: false
 #| echo: false
+#| code-summary: "R: Vs"
 
 df_centrality_both_pareto_cat <- na.omit(
   df_centrality_both_barplot) |> 
@@ -506,6 +591,7 @@ par(def_par)
 
 
 ```{r}
+#| code-summary: "R: Visualizing closeness of the healthcare facilities"
 
 # Import he data
 ## hospital with closenesss values
@@ -544,6 +630,7 @@ leaflet(closseness_df) |>
 ```
 
 ```{r}
+#| code-summary: "R: Creating the table showing closeness values"
 closseness <-sf::st_read(eisenberg_connection, 
                             layer = "clossness_hospital_porto")
 closseness_no_geom <- closseness |>  
@@ -583,199 +670,9 @@ metrics?
 
 ### Sum Edge Betweenness:
 
-```{sql}
-#| eval: false
-
----- Based on a max of 100*100 / 22 = 454   
-SELECT count(*) FROM hospital_rs_node_v2;  --- 22 POI: Hospitals 
------ Create origin   
-CREATE TABLE weight_sampling_454_origin  AS
-WITH porto_454_origin AS (
-        SELECT
-            * 
-        FROM 
-            od_2728_snapped 
-        ORDER BY random() 
-        LIMIT 454)
-SELECT * FROM  porto_454_origin;
-
---- Create destinations in this case hospitals
-CREATE TABLE hospital_rs_destination AS
-SELECT 
-	cd_cnes,
-	ds_cnes,
-	id,
-	geom_node
-FROM 
-	hospital_rs_node_v2;  --- 22 POI: Hospitals    
-	
----- Create hospitald destinations from closeness 
-CREATE TABLE hospital_rs_destination AS
-WITH clossness_hospital_porto_id AS (
-SELECT 
-	n.*,
-	v.id
-FROM 
-	clossness_hospital_porto AS n
-JOIN
-	porto_alegre_net_largest_vertices_pgr AS v
-	ON  st_intersects(n.geom_node, v.the_geom))
-SELECT 
-	cd_cnes,
-	ds_cnes,
-	id,
-	closeness,
-	geom_node
-FROM 
-	clossness_hospital_porto_id; 	
----- Create index for origin
-CREATE INDEX weight_sampling_454_origin_net_id ON weight_sampling_454_origin USING hash(net_id);
-CREATE INDEX weight_sampling_454_origin_geom ON weight_sampling_454_origin USING gist(the_geom);
----- Create index for destination
-CREATE INDEX hospital_rs_destination_net_id ON hospital_rs_destination USING btree(id);
-CREATE INDEX hospital_rs_destination_geom ON hospital_rs_destination USING gist(geom_node);
----- Cluster
-CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
----- Vacuum clean
-VACUUM(full, ANALYZE) weight_sampling_454_origin;
-VACUUM(full, ANALYZE) hospital_rs_destination;
-VACUUM(full, ANALYZE) porto_alegre_net_largest;
----- Running the query
-EXPLAIN ANALYZE
- CREATE TABLE centrality_424_hospitals_porto_end_id_centrality AS
- SELECT   
- b.vid,
- j.end_id,
- b.the_geom,
- count(the_geom) as centrality 
- FROM  pgr_dijkstra('SELECT  id,
-							 source,
-							target,
-							cost
-				      FROM porto_alegre_net_largest',
-				      ARRAY(SELECT net_id AS origin_id FROM weight_sampling_454_origin),
-				      ARRAY(SELECT id AS destination_id FROM hospital_rs_destination),
-				      directed := TRUE) j
-				      left JOIN porto_alegre_net_largest AS b
-				      ON j.edge = b.id
-				      GROUP BY  b.id, j.end_vid, b.the_geom
-				      ORDER BY centrality DESC;  
- ---- Group by end_vid that represent destination
-select * from hospital_rs_destination ;
-				     
-SELECT * FROM centrality_424_hospitals_porto_end_id_centrality; 				     
-SELECT 
-	centrality.end_vid,
-	hospitals.cd_cnes,
-	hospitals.ds_cnes,
-	count(centrality.the_geom)::int AS sum_centrality,
-	max(st_length(centrality.the_geom::geography))::int AS length
-FROM 
-	centrality_424_hospitals_porto_end_id_centrality AS centrality
-LEFT JOIN 
-	hospital_rs_destination AS hospitals ON  centrality.end_vid = hospitals.id 
-GROUP BY end_vid, cd_cnes, ds_cnes;
-
-```
-
-```{sql}
-#| eval: false
-
-### Post-scenario
-
-SELECT count(*) FROM hospital_rs_node_v2;  --- 22 POI: Hospitals 
------ Create origin   
-CREATE TABLE weight_sampling_454_origin_post  AS
-WITH porto_454_origin_post AS (
-        SELECT
-            * 
-        FROM 
-            od_2728_snapped_post 
-        ORDER BY random() 
-        LIMIT 454)
-SELECT * FROM  porto_454_origin_post;
-
---- Create destinations in this case hospitals
-CREATE TABLE hospital_rs_destination AS
-SELECT 
-    cd_cnes,
-    ds_cnes,
-    id,
-    geom_node
-FROM 
-    hospital_rs_node_v2;  --- 22 POI: Hospitals    
-    
----- Create hospitald destinations from closeness 
-CREATE TABLE hospital_rs_destination AS
-WITH clossness_hospital_porto_id AS (
-SELECT 
-    n.*,
-    v.id
-FROM 
-    clossness_hospital_porto AS n
-JOIN
-    porto_alegre_net_largest_vertices_pgr AS v
-    ON  st_intersects(n.geom_node, v.the_geom))
-SELECT 
-    cd_cnes,
-    ds_cnes,
-    id,
-    closeness,
-    geom_node
-FROM 
-    clossness_hospital_porto_id;    
----- Create index for origin
-
-CREATE INDEX weight_sampling_454_origin_net_id ON weight_sampling_454_origin_post USING hash(net_id); 
-CREATE INDEX weight_sampling_454_origin_geom ON weight_sampling_454_origin_post USING gist(the_geom);
----- Create index for destination
-CREATE INDEX hospital_rs_destination_net_id ON hospital_rs_destination USING btree(id);
-CREATE INDEX hospital_rs_destination_geom ON hospital_rs_destination USING gist(geom_node);
----- Cluster
-CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
----- Vacuum clean
-VACUUM(full, ANALYZE) weight_sampling_454_origin_post;
-VACUUM(full, ANALYZE) hospital_rs_destination;
-VACUUM(full, ANALYZE) prueba_largest_network_post;
----- Running the query
-EXPLAIN ANALYZE
- CREATE TABLE centrality_424_hospitals_porto_end_id_centrality_post AS
- SELECT   
- b.ogc_fid,
- j.end_vid,
- b.the_geom,
- count(the_geom) as centrality 
- FROM  pgr_dijkstra('SELECT  ogc_fid AS id,
-                             fromid AS source,
-                            toid AS target,
-                            weight AS cost
-                      FROM prueba_largest_network_post',
-                      ARRAY(SELECT net_id AS origin_id FROM weight_sampling_454_origin_post),
-                      ARRAY(SELECT id AS destination_id FROM hospital_rs_destination),
-                      directed := TRUE) j
-                      left JOIN prueba_largest_network_post AS b
-                      ON j.edge = b.ogc_fid
-                      GROUP BY  b.ogc_fid, j.end_vid, b.the_geom
-                      ORDER BY centrality DESC;  
- ---- Group by end_vid that represent destination
-CREATE TABLE centrality_424_hospitals_porto_end_id_centrality_post_group AS
-SELECT 
-    centrality.end_vid,
-    hospitals.cd_cnes,
-    hospitals.ds_cnes,
-    max(centrality.centrality)::int AS max_centrality,
-    max(st_length(centrality.the_geom::geography))::int AS length
-FROM 
-    centrality_424_hospitals_porto_end_id_centrality_post AS centrality
-LEFT JOIN 
-    hospital_rs_destination AS hospitals ON  centrality.end_vid = hospitals.id 
-GROUP BY end_vid, cd_cnes, ds_cnes;
-
-```
-
-
 ```{r}
 #| eval: false
+#| code-summary: "R: Visualizing the accesibility most affected from healtchare facilities based on betweenness centrality"
 
 ## Eisenberg
 hospitals_betweenness_pre <- st_read(eisenberg_connection, "centrality_424_hospitals_porto_end_id_centrality") 
@@ -876,13 +773,10 @@ DT::datatable(subset(df_hospitals_betweenness_both_compare,
 
 ### Closeness:
 
-
-
-
-
 ```{r}
 #| eval: false
 #| echo: false
+#| code-summary: "R: Visualizing closeness results obtained with pgrouting"
 
 ## Import
 hospitals_closeness_both <- st_read(eisenberg_connection, "hospitals_closeness_both") 
@@ -939,6 +833,7 @@ p <- ggplot(hospitals_closeness_long, aes(x=closeness_value, y=reorder(letter, d
 
 
 ```{r}
+#| code-summary: "R: Changes on the accesibiliy based on closeness"
 hospitals_closeness_both <- st_read(eisenberg_connection, "hospitals_closeness_both") 
 df_hospitals_closeness_both_compare <- hospitals_closeness_both |> 
                                               mutate(diff_closeness_percent = 
