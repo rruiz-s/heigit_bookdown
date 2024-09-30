@@ -1,6 +1,6 @@
 # Results
 
-Key variables: - Centrality ---\> connectivity - Accessibility ----\> vulnerability-resilience
+Key variables: - Centrality --- connectivity - Accessibility ---- vulnerability-resilience
 
 ```{r}
 #| echo: false
@@ -26,14 +26,26 @@ flooding <- sf::st_read("~/heigit_bookdown/data/flooding_porto.geojson")
 nuts_porto <-st_read(eisenberg_connection, "nuts_porto")
 ghs <- st_read(eisenberg_connection, "ghs_aoi_porto_alegre")
 hospitals <- st_read(eisenberg_connection, "hospital_rs_destination")
-pre_network <- st_read(eisenberg_connection, "porto_alegre_net_largest")
+pre_network_largest <- st_read(eisenberg_connection, "porto_alegre_net_largest")
+pre_network_component <-st_read(eisenberg_connection, "component_analysis_network_porto") |> sf::st_drop_geometry()
+pre_network_component_geom <-st_read(eisenberg_connection, "component_analysis_network_porto") 
+pre_network_porto <- st_read(eisenberg_connection, "porto_alegre_net_pre")
+centrality_weighted_100_bidirect_cleaned <- st_read(eisenberg_connection,"centrality_weighted_100_bidirect_cleaned") 
+centrality_weighted_100_bidirect_cleaned_post <-  st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned_post")
+weight_sampling_100_origin_post <-  st_read(eisenberg_connection, "weight_sampling_100_origin_post")
+weight_sampling_100_destination_post <-  st_read(eisenberg_connection, "weight_sampling_100_destination_post")
+porto_alegre_net_pre_ors <- st_read(eisenberg_connection,"porto_alegre_net_pre_ors")
+weight_sampling_100_origin <- st_read(eisenberg_connection, "weight_sampling_100_origin")
+
+weight_sampling_100_destination <-st_read(eisenberg_connection, "weight_sampling_100_destination")   
+
 ```
 
 ## Data preparation
 
 ### OSM & ORS data
 
-The area of interested  covered `r round(st_area(st_as_sfc(st_bbox(ghs$geom)))/1000000)` km² of surface including `r nrow(nuts_porto)` municipalities with `r nrow(hospitals)` healthcare facilities. The size of the network where the centrality analysis was conducted contained `r ``  
+The area of interest  covered `r round(st_area(st_as_sfc(st_bbox(ghs$geom)))/1000000)` km² of surface including `r nrow(nuts_porto)` municipalities with `r nrow(hospitals)` healthcare facilities. On this area, the road network included `r n_distinct(pre_network_component$component)` components with a total length of `r round(st_length(pre_network_largest$the_geom)/1000)` m. The selected component for the centrality analysis represented the `r round(subset(pre_network_component, component==1, select = distance)/sum(pre_network_component$distance) * 100,2)`% of the road network, with a length of `r subset(pre_network_component, component==1, select = distance)` m. The transformed graph network contained `r n_distinct(pre_network_largest$target)` target nodes, `r n_distinct(pre_network_largest$source)` source nodes, and `r n_distinct(pre_network_largest$id)` edges.  Classified as a large settlement, the estimated population from the GHSl-SMOD was `r round(ghs$pop_2020)` with a total built up area of `r round(ghs$bu_m2_2020/1000000) ` km². 
 
 
 ```{r}
@@ -302,6 +314,9 @@ FROM difference_outside_flood_v4;
 
 > How does road connectivity change after being impacted by flooding based on connectivity metrics?
 
+
+A total of `r n_distinct(weight_sampling_100_origin_post$pt_id)` origin and `r n_distinct(weight_sampling_100_destination_post$pt_id)` destination generated `r n_distinct(weight_sampling_100_destination_post$pt_id) * n_distinct(weight_sampling_100_origin_post$pt_id) ` shortest paths. 
+
 ### Sum Edge Betweenness
 
 ```{r}
@@ -434,10 +449,12 @@ DT::datatable(subset(df_centrality_negative_outlier_distinct_address, select=c("
                     backgroundPosition='center') 
 ```
 
+
 ```{=html}
 
 <iframe width="760" height="500" src="/media/centrality_table_results.html" title = "Sum Edge Betweenness in the Urban Settlement located in Porto Alegre "></iframe>
 ```
+
 ```{r}
 #| warming: false
 #| message: false
@@ -675,7 +692,7 @@ hospitals_betweenness_post_local$event <- "post-event"
 ## Import
 hospitals_betweenness_both_long <- hospitals_betweenness_pre_local |> bind_rows(hospitals_betweenness_post_local) |> subset(select=c("cd_cnes","ds_cnes","max_centrality","event")) |> pivot_wider(
     names_from = event,
-    values_from = max_centrality,
+    values_from = max_centrality
   ) |>  rename( betwenness_pre= `pre-event`,
                 betwenness_post= `post-event`) 
 hospitals_betweenness_both_long[is.na(hospitals_betweenness_both_long)] <- 0    
