@@ -339,8 +339,6 @@ FROM difference_outside_flood_v4;
 
 > How does road connectivity change after being impacted by flooding based on connectivity metrics?
 
- 
-
 ### Sum Edge Betweenness
 
 The average sum edge betweenness before the flooding was `r round(mean(centrality_weighted_100_bidirect_cleaned$centrality))`, being decreased to `r round(mean(centrality_weighted_100_bidirect_cleaned_post$centrality))` after the flooding. In contrast, the flooding caused a `r round((round(max(centrality_weighted_100_bidirect_cleaned_post$centrality)) - round(max(centrality_weighted_100_bidirect_cleaned$centrality))) / round(max(centrality_weighted_100_bidirect_cleaned$centrality)) * 100) ` % decrease on the maximum values,  reducing the sum edge betweenness from `r max(centrality_weighted_100_bidirect_cleaned$centrality)` to `r max(centrality_weighted_100_bidirect_cleaned_post$centrality)`.  Prior to the event, the `r round(round(st_length(st_union((subset(filter(centrality_weighted_100_bidirect_cleaned, centrality > quantile(centrality_weighted_100_bidirect_cleaned$centrality)[4]), select=the_geom)))))/round(st_length(st_union(subset(centrality_weighted_100_bidirect_cleaned, select=the_geom))))*100)`% of the network that extended over `r round(st_length(st_union((subset(filter(centrality_weighted_100_bidirect_cleaned, centrality > quantile(centrality_weighted_100_bidirect_cleaned$centrality)[4]), select=the_geom))))/1000)` km, accounted for `r round(sum(centrality_pre$centrality[centrality_pre$centrality > quantile(centrality_pre$centrality)[4]])/sum(centrality_pre$centrality)*100)` % of the overall connectivity adding `r sum(centrality_pre$centrality[centrality_pre$centrality > quantile(centrality_pre$centrality)[4]])` to the network.  After the event, the upper quartile of the network, with a length of `r round(st_length(st_union((subset(filter(centrality_weighted_100_bidirect_cleaned_post, centrality > quantile(centrality_weighted_100_bidirect_cleaned_post$centrality)[4]), select=the_geom))))/1000)`km, maintained `r round(sum(centrality_post$centrality[centrality_post$centrality > quantile(centrality_post$centrality)[4]])/sum(centrality_post$centrality)*100) `% of the total centrality, however, it only contributed `r  sum(centrality_post$centrality[centrality_post$centrality > quantile(centrality_post$centrality)[4]]) ` to the sum edge betweenness.
@@ -510,6 +508,9 @@ ggplot(centrality_both, aes(x=centrality, fill=event)) +
     theme_minimal()
 ```
 
+The following grouped bar plot illustrates the sum of the edge betweenness values classified by their quantiles for both events, before and after the flooding. The X-Axis is categorized in the four quantiles, while yhe y-axis summed up the betweenness values of these quartiles. In Both events a similar pattern is found, the roads belonging to the Q4 caused most of the edge beetweenness of the network. The `r round(st_length(st_union(filter(centrality_pre, centrality < quantile(centrality_pre$centrality)[4])["the_geom"]))/1000)` km that comprised all the roads below the fourth quartile only contributed to `r round(summarise(filter(sf::st_drop_geometry(centrality_pre), centrality < quantile(centrality_pre$centrality)[4])["centrality"], centrality = sum(centrality))/sum(sf::st_drop_geometry(centrality_pre)$centrality) * 100)` for the preflooding scenario. Therefore, the findings shown an positive skewed distribution, where a small proportion of roads were responsible for the  roads held responsible for the `r round(summarise(filter(sf::st_drop_geometry(centrality_pre), centrality > quantile(centrality_pre$centrality)[4])["centrality"], centrality = sum(centrality))/sum(sf::st_drop_geometry(centrality_pre)$centrality) * 100)`% of the centrality of the network.
+
+
 ```{r}
 #| warming: false
 #| message: false
@@ -551,7 +552,7 @@ barplot_event_cat_sum <- df_centrality_both_barplot_cat |>
   labs(title = "Centrality analysis",
        subtitle= "Barplot grouped by the post and pre event",
        x = " Quantiles",
-       y = "Sum of edge betweenness") +
+       y = "Edge betweenness") +
   theme(plot.title=element_text(family ="bold", hjust=0.5),
         plot.subtitle = element_text(colour="#626262", hjust=0.5),
         legend.position='bottom') +
@@ -624,82 +625,8 @@ axis(side = 4, at = c(0, px), labels = paste(c(0, round(d$cum_freq * 100)) ,"%",
 
 ## restoring default paramenter
 par(def_par) 
-```
-![](/media/pareto_chart.png)
 
-### Closeness
-
-```{r}
-#| code-summary: "R: Visualizing closeness of the healthcare facilities"
-
-# Import he data
-## hospital with closenesss values
-closseness <-sf::st_read(eisenberg_connection, 
-                            layer = "clossness_hospital_porto")
-closseness_df <- closseness |>  arrange(ds_cnes, closeness) |>
-                    mutate(lng= 
-                              unlist(map(geom_hospital,1)),
-                           lat=
-                              unlist(map(geom_hospital,2)),
-                           closeness_norm = 
-                          (closseness$closeness - min(closseness$closeness)) / (max(closseness$closeness) - min(closseness$closeness)) * 100,
-                          position = rank(-closeness))
-## Create Color palette for visualization
-pal <- colorQuantile(palette = "OrRd",closseness_df$closeness, n=4 )
-
-## Create leaflet product
-
-icons <- makeAwesomeIcon(
-  icon = 'fa-heartbeat',
-  iconColor = "#FFFFFF",
-  markerColor = "#57142c",
-  library = "fa"
-)
-leaflet(closseness_df) |>
-    addProviderTiles(providers$OpenStreetMap.HOT) |>
-    addCircles(data =closseness_df , radius = ~sqrt(closeness)*10, fillOpacity = .50, color =~pal(closeness)) |>
-  addAwesomeMarkers(data=closseness_df,
-                          icon =icons,
-                          popup= ~paste0("<b>Código CNES: </b>", cd_cnes, "<br/>",
-                                   "<b>Nome: </b>", ds_cnes, "<br/>",
-                                   "<b> Closeness</b>:", closeness, "<br/>",
-                                   "<b>Longitude: </b>", lng, "<br/>",
-                                   "<b>Posição </b>", position, "<br/>"))
-
-```
-
-```{r}
-#| code-summary: "R: Creating the table showing closeness values"
-closseness <-sf::st_read(eisenberg_connection, 
-                            layer = "clossness_hospital_porto")
-closseness_no_geom <- closseness |>  
-                          arrange(ds_cnes, closeness) |>
-                          mutate(lng= 
-                              unlist(map(geom_hospital,1)),
-                           lat=
-                              unlist(map(geom_hospital,2)),
-                           closeness_norm = 
-                          (closseness$closeness - min(closseness$closeness)) / (max(closseness$closeness) - min(closseness$closeness)) * 100,
-                          position = rank(-closeness),
-                          ds_cnes =stringr::str_to_title(ds_cnes)) |>
-                  sf::st_drop_geometry()
-
-DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes","closeness")),
-              extensions="Buttons",
-                         options=list(
-                           dom="Bfrtip",
-                           buttons=c("copy","csv","pdf"),
-                            initComplete = JS(
-    "function(settings, json) {",
-    "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
-    "}")
-                                  )
-              ) |> 
-    DT::formatStyle("closeness",
-              background=DT::styleColorBar(range(closseness_no_geom$closeness),'#ee8b8b'),
-                backgroundSize = '98% 88%',
-  backgroundRepeat = 'no-repeat',
-  backgroundPosition = 'center') 
+#### ![](/media/pareto_chart.png)
 ```
 
 ## RQ2: Accessibility analysis
@@ -809,8 +736,6 @@ DT::datatable(subset(df_hospitals_betweenness_both_compare,
 
 ```
 
-### Closeness:
-
 ```{r}
 #| eval: false
 #| echo: false
@@ -905,6 +830,83 @@ DT::datatable(subset(df_hospitals_closeness_both_compare,
   backgroundRepeat = 'no-repeat',
   backgroundPosition = 'center')
 ```
+
+### Closeness:
+
+```{r}
+#| code-summary: "R: Visualizing closeness of the healthcare facilities"
+
+# Import he data
+## hospital with closenesss values
+closseness <-sf::st_read(eisenberg_connection, 
+                            layer = "clossness_hospital_porto")
+closseness_df <- closseness |>  arrange(ds_cnes, closeness) |>
+                    mutate(lng= 
+                              unlist(map(geom_hospital,1)),
+                           lat=
+                              unlist(map(geom_hospital,2)),
+                           closeness_norm = 
+                          (closseness$closeness - min(closseness$closeness)) / (max(closseness$closeness) - min(closseness$closeness)) * 100,
+                          position = rank(-closeness))
+## Create Color palette for visualization
+pal <- colorQuantile(palette = "OrRd",closseness_df$closeness, n=4 )
+
+## Create leaflet product
+
+icons <- makeAwesomeIcon(
+  icon = 'fa-heartbeat',
+  iconColor = "#FFFFFF",
+  markerColor = "#57142c",
+  library = "fa"
+)
+leaflet(closseness_df) |>
+    addProviderTiles(providers$OpenStreetMap.HOT) |>
+    addCircles(data =closseness_df , radius = ~sqrt(closeness)*10, fillOpacity = .50, color =~pal(closeness)) |>
+  addAwesomeMarkers(data=closseness_df,
+                          icon =icons,
+                          popup= ~paste0("<b>Código CNES: </b>", cd_cnes, "<br/>",
+                                   "<b>Nome: </b>", ds_cnes, "<br/>",
+                                   "<b> Closeness</b>:", closeness, "<br/>",
+                                   "<b>Longitude: </b>", lng, "<br/>",
+                                   "<b>Posição </b>", position, "<br/>"))
+
+```
+
+```{r}
+#| code-summary: "R: Creating the table showing closeness values"
+closseness <-sf::st_read(eisenberg_connection, 
+                            layer = "clossness_hospital_porto")
+closseness_no_geom <- closseness |>  
+                          arrange(ds_cnes, closeness) |>
+                          mutate(lng= 
+                              unlist(map(geom_hospital,1)),
+                           lat=
+                              unlist(map(geom_hospital,2)),
+                           closeness_norm = 
+                          (closseness$closeness - min(closseness$closeness)) / (max(closseness$closeness) - min(closseness$closeness)) * 100,
+                          position = rank(-closeness),
+                          ds_cnes =stringr::str_to_title(ds_cnes)) |>
+                  sf::st_drop_geometry()
+
+DT::datatable(subset(closseness_no_geom, select=c("position","cd_cnes","ds_cnes","closeness")),
+              extensions="Buttons",
+                         options=list(
+                           dom="Bfrtip",
+                           buttons=c("copy","csv","pdf"),
+                            initComplete = JS(
+    "function(settings, json) {",
+    "$(this.api().table().header()).css({'background-color': '#d50038', 'color': '#fff'});",
+    "}")
+                                  )
+              ) |> 
+    DT::formatStyle("closeness",
+              background=DT::styleColorBar(range(closseness_no_geom$closeness),'#ee8b8b'),
+                backgroundSize = '98% 88%',
+  backgroundRepeat = 'no-repeat',
+  backgroundPosition = 'center') 
+```
+
+
 
 ## RQ3: Critical infrastructures
 

@@ -8,7 +8,10 @@ execute:
 book:
   title: "Connectivity for Disaster Resiliance"
   subtitle: "Connectivity to increase resilience on the access to healthcare services impacted by flooding in Rio Grande do Sul."
-  author: "Ricardo Ruiz Sánchez"
+  author:
+    - Monika Kuffer
+    - Marcel Reinmuth
+    - Ricardo Ruiz Sánchez
   repo-url: https://github.com/ddotta/cookbook-rpolars/
   page-navigation: true
   description: Internship Report
