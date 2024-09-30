@@ -20,8 +20,9 @@ eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
                           port = 25432)
 
 ## Import data
-centrality_pre <- st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
+centrality_weighted_100_bidirect_cleaned <- st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
 centrality_post <- st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned_post")
+centrality_pre <-  st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
 flooding <- sf::st_read("~/heigit_bookdown/data/flooding_porto.geojson") 
 nuts_porto <-st_read(eisenberg_connection, "nuts_porto")
 ghs <- st_read(eisenberg_connection, "ghs_aoi_porto_alegre")
@@ -36,8 +37,13 @@ weight_sampling_100_origin_post <-  st_read(eisenberg_connection, "weight_sampli
 weight_sampling_100_destination_post <-  st_read(eisenberg_connection, "weight_sampling_100_destination_post")
 porto_alegre_net_pre_ors <- st_read(eisenberg_connection,"porto_alegre_net_pre_ors")
 weight_sampling_100_origin <- st_read(eisenberg_connection, "weight_sampling_100_origin")
-
-weight_sampling_100_destination <-st_read(eisenberg_connection, "weight_sampling_100_destination")   
+dijkstra_resulting_table_pre <- st_read( eisenberg_connection,"dijkstra_resulting_table_pre")
+porto_alegre_street_united <- st_read(eisenberg_connection, "porto_alegre_street_united")
+flooding_rio_grande_do_sul <- st_read(eisenberg_connection, "flooding_rio_grande_do_sul")
+weight_sampling_100_destination <-st_read(eisenberg_connection, "weight_sampling_100_destination") 
+prueba_largest_network_post_vertices_pgr <- st_read(eisenberg_connection, "prueba_largest_network_post_vertices_pgr")
+porto_alegre_net_largest_vertices_pgr <- st_read(eisenberg_connection, "porto_alegre_net_largest_vertices_pgr")
+prueba_largest_network_post <- st_read(eisenberg_connection , "prueba_largest_network_post")
 
 ```
 
@@ -45,7 +51,13 @@ weight_sampling_100_destination <-st_read(eisenberg_connection, "weight_sampling
 
 ### OSM & ORS data
 
-The area of interest  covered `r round(st_area(st_as_sfc(st_bbox(ghs$geom)))/1000000)` km² of surface including `r nrow(nuts_porto)` municipalities with `r nrow(hospitals)` healthcare facilities. On this area, the road network included `r n_distinct(pre_network_component$component)` components with a total length of `r round(st_length(pre_network_largest$the_geom)/1000)` m. The selected component for the centrality analysis represented the `r round(subset(pre_network_component, component==1, select = distance)/sum(pre_network_component$distance) * 100,2)`% of the road network, with a length of `r subset(pre_network_component, component==1, select = distance)` m. The transformed graph network contained `r n_distinct(pre_network_largest$target)` target nodes, `r n_distinct(pre_network_largest$source)` source nodes, and `r n_distinct(pre_network_largest$id)` edges.  Classified as a large settlement, the estimated population from the GHSl-SMOD was `r round(ghs$pop_2020)` with a total built up area of `r round(ghs$bu_m2_2020/1000000) ` km². 
+The area of interest  covered `r round(st_area(st_as_sfc(st_bbox(ghs$geom)))/1000000)` km² of surface including `r nrow(nuts_porto)` municipalities with `r nrow(hospitals)` healthcare facilities. On this area, the road network included `r n_distinct(pre_network_component$component)` components with a total length of `r round(st_length(st_union(pre_network_component_geom$the_geom))/1000)` km. The selected component for the centrality analysis represented the `r round(subset(pre_network_component, component==1, select = distance)/sum(pre_network_component$distance) * 100,2)`% of this total, with a length of `r round(subset(pre_network_component, component==1, select = distance)/1000)` m. The transformed graph network contained `r n_distinct(pre_network_largest$target)` target nodes, `r n_distinct(pre_network_largest$source)` source nodes, and `r n_distinct(pre_network_largest$id)` edges.  Classified as a large settlement [@european_commission_joint_research_centre_ghsl_2023], the estimated population from the GHSl-SMOD was `r round(ghs$pop_2020)` with a total built up area of `r round(ghs$bu_m2_2020/1000000) ` km².  
+
+A total of `r n_distinct(weight_sampling_100_origin_post$pt_id)` origin and `r n_distinct(weight_sampling_100_destination_post$pt_id)` destination generated `r nrow(filter(dijkstra_resulting_table_pre, edge==-1))` shortest paths. The initial naive approach using the regular sampling method generated these points in fields and non-populated areas, which would have skewed the representation of the population distribution. This would have resulted in increasing the centrality of roads that are less relevant to the population's movement patterns during the flooding event. Therefore, using the weighted sampling based on the built-up areas provided a closer model representation of the flooding phenomena. 
+
+After subdividing the flooding extent and adjusting it to the Area of Interest (AoI), the flooding covered `r round(st_area(flooding$geometry)/ (10**3)**2) ` km² instead of the original `r round(st_area(flooding_rio_grande_do_sul$geom)/ (10**3)**2)` km². This operation allowed to create the post-flooding road network with less computing costs by only selecting only the flooding extent that intersected with the AoI. This post-flooding network with a length of `r round(st_length(st_union(centrality_pre$the_geom))/1000)`  included the components 21, 14 and 5187, summing up a total of `r  n_distinct(prueba_largest_network_post_vertices_pgr$id)` vertices against the `r n_distinct(porto_alegre_net_largest_vertices_pgr$id)` vertices from the pre-flooding network. When compared to the network before the flooding extent, the post-network network reduced its length %, from , to.
+
+
 
 
 ```{r}
@@ -57,7 +69,7 @@ osmium extract -b -51.2791,-30.1722,-50.9407,-29.8048 sul-240501.osm.pbf -o puer
 
 ```{=html}
 
-<iframe width="760" height="500" src="/media/map_sampling_example_v0.html" title = "Inspect of the components in the graph network "></iframe>
+<iframe width="760" height="500" src="/media/map_sampling_example_v1.html" title = "Inspect of the components in the graph network "></iframe>
 ```
 ```{r}
 #| message: false
@@ -81,17 +93,17 @@ nuts <- st_read(eisenberg_connection, "nuts")
 weighted_sampling_origin$sample <- "origin"
 weighted_sampling_destination$sample <- "destination"
 weighted_sampling_both <- rbind(weighted_sampling_origin,
-                           weighted_sampling_destination )
+                                weighted_sampling_destination )
 
-weighted_sampling <- weighted_sampling_both |> mutate(sample = as.factor(weighted_sampling$sample))
+weighted_sampling <- weighted_sampling_both |> mutate(sample = as.factor(weighted_sampling_both$sample))
 
 poi_hospital <- st_read(eisenberg_connection,"hospital_rs_node_v2")
 m <- matrix(c(
-     0, 10, NA,   # Values >= 0 and <= 10 become 0
-     10, 13, 1,  # Values > 10 and <= 21 become 1
-     13, 29, 2,  # Values > 21 and <= 29 become 2
-     30, 30, 3   # Values == 30 become 3
- ), ncol = 3, byrow = TRUE)
+  0, 10, NA,   # Values >= 0 and <= 10 become 0
+  10, 13, 1,  # Values > 10 and <= 21 become 1
+  13, 29, 2,  # Values > 21 and <= 29 become 2
+  30, 30, 3   # Values == 30 become 3
+), ncol = 3, byrow = TRUE)
 ## Classify using the correct matrix
 rc2 <- classify(ghs_smod_terra, m, include.lowest=TRUE)
 rc2_factor <- as.factor(rc2)
@@ -105,32 +117,48 @@ mapview(ghs_build[[1]],
         col.regions = pal(100),
         alpha.regions= 0.45,
         hide=TRUE) +
-mapview(ghs_smod[[1]],
-        layer.name = "Settlement classification",
-        col.regions = pal(100),
-        alpha.regions= 0.35,
-        hide=TRUE) +
-mapview(weighted_sampling,
-        layer.name="Weighted samples",
-        zcol="sample",
-        col.regions=c("#2D5CA4","#00A3A0"),
-        hide=TRUE,
-        cex= 3) +
-mapview(regular_sampling_100,
-        color = "darkgray",
-        col.regions="darkgray",
-        cex= 3,
-        legend= FALSE,
-        hide=TRUE) +
-mapview(subset(poi_hospital,
-               select=c("cd_cnes",
-                        "ds_cnes",
-                        "id",
-                        "geom_hospital")),
-                layer.name = "POI - Hospitals",
-                color= "darkred",
-        col.regions="#CA2334",
-               popup=popupTable(poi_hospital, zcol=c("cd_cnes","ds_cnes","id")))
+  mapview(ghs_smod[[1]],
+          layer.name = "Settlement classification",
+          col.regions = pal(100),
+          alpha.regions= 0.35,
+          hide=TRUE) +
+  mapview(weighted_sampling,
+          layer.name="Weighted samples",
+          zcol="sample",
+          col.regions=c("#2D5CA4","#00A3A0"),
+          hide=TRUE,
+          cex= 3) +
+  mapview()
+  mapview(regular_sampling_100,
+          color = "darkgray",
+          col.regions="darkgray",
+          cex= 3,
+          legend= FALSE,
+          hide=TRUE) +
+  mapview(subset(poi_hospital,
+                 select=c("cd_cnes",
+                          "ds_cnes",
+                          "id",
+                          "geom_hospital")),
+          layer.name = "POI - Hospitals",
+          color= "darkred",
+          col.regions="#CA2334",
+          popup=popupTable(poi_hospital, zcol=c("cd_cnes","ds_cnes","id"))) +
+mapview(flooding,
+            color="darkblue",
+            alpha.regions= 0.5,
+        hide =TRUE,
+            layer.name="Flooding layer") +
+    mapview::mapview(prueba_largest_network_post,
+                     lwd = 0.2,
+                     color="#cb2a32",
+                     hide = TRUE,
+                     layer.name ="Post-flooding network") +
+    mapview::mapview(pre_network_largest,
+                     color = "#00a4a4",
+                     lwd= 0.2,
+                     hide=TRUE,
+                     layer.name ="Pre-flooding network") 
 
 ```
 
@@ -314,10 +342,13 @@ FROM difference_outside_flood_v4;
 
 > How does road connectivity change after being impacted by flooding based on connectivity metrics?
 
-
-A total of `r n_distinct(weight_sampling_100_origin_post$pt_id)` origin and `r n_distinct(weight_sampling_100_destination_post$pt_id)` destination generated `r n_distinct(weight_sampling_100_destination_post$pt_id) * n_distinct(weight_sampling_100_origin_post$pt_id) ` shortest paths. 
+ 
 
 ### Sum Edge Betweenness
+
+The average sum edge betweenness before the flooding was `r round(mean(centrality_weighted_100_bidirect_cleaned$centrality))`, being decreased to `r round(mean(centrality_weighted_100_bidirect_cleaned_post$centrality))` after the flooding. In contrast, the flooding caused a `r round((round(max(centrality_weighted_100_bidirect_cleaned_post$centrality)) - round(max(centrality_weighted_100_bidirect_cleaned$centrality))) / round(max(centrality_weighted_100_bidirect_cleaned$centrality)) * 100) ` % decrease on the maximum values,  reducing the sum edge betweenness from `r max(centrality_weighted_100_bidirect_cleaned$centrality)` to `r max(centrality_weighted_100_bidirect_cleaned_post$centrality)`. 
+
+Prior to the event, the `r round(round(st_length(st_union((subset(filter(centrality_weighted_100_bidirect_cleaned, centrality > quantile(centrality_weighted_100_bidirect_cleaned$centrality)[4]), select=the_geom)))))/round(st_length(st_union(subset(centrality_weighted_100_bidirect_cleaned, select=the_geom))))*100)` of the network that extended over `r round(st_length(st_union((subset(filter(centrality_weighted_100_bidirect_cleaned, centrality > quantile(centrality_weighted_100_bidirect_cleaned$centrality)[4]), select=the_geom)))))` m, accounted for `r round(sum(centrality_pre$centrality[centrality_pre$centrality > quantile(centrality_pre$centrality)[4]])/sum(centrality_pre$centrality)*100)` % of the overall connectivity.  After the event,
 
 ```{r}
 #| eval: false
