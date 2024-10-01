@@ -9,9 +9,9 @@ book:
   title: "Connectivity for Disaster Resiliance"
   subtitle: "Connectivity to increase resilience on the access to healthcare services impacted by flooding in Rio Grande do Sul."
   author:
-    - Monika Kuffer
-    - Marcel Reinmuth
-    - Ricardo Ruiz Sánchez
+    - GIMA Supervisor - Monika Kuffer
+    - HeiGIT Supervisor - Marcel Reinmuth
+    - Intern - Ricardo Ruiz Sánchez
   repo-url: https://github.com/ddotta/cookbook-rpolars/
   page-navigation: true
   description: Internship Report

@@ -68,6 +68,7 @@ osmium extract -b -51.2791,-30.1722,-50.9407,-29.8048 sul-240501.osm.pbf -o puer
 
 <iframe width="760" height="500" src="/media/map_sampling_example_v1.html" title = "Inspect of the components in the graph network "></iframe>
 ```
+
 ```{r}
 #| message: false
 #| warning: false
@@ -123,9 +124,8 @@ mapview(ghs_build[[1]],
           layer.name="Weighted samples",
           zcol="sample",
           col.regions=c("#2D5CA4","#00A3A0"),
-          hide=TRUE,
+          hide=FALSE,
           cex= 3) +
-  mapview()
   mapview(regular_sampling_100,
           color = "darkgray",
           col.regions="darkgray",
@@ -146,16 +146,16 @@ mapview(flooding,
             alpha.regions= 0.5,
         hide =TRUE,
             layer.name="Flooding layer") +
-    mapview::mapview(prueba_largest_network_post,
+    mapview::mapview(centrality_post,
                      lwd = 0.2,
                      color="#cb2a32",
                      hide = TRUE,
-                     layer.name ="Post-flooding network") +
-    mapview::mapview(pre_network_largest,
+                     layer.name ="Post-flooding centrality network") +
+    mapview::mapview(centrality_post,
                      color = "#00a4a4",
                      lwd= 0.2,
                      hide=TRUE,
-                     layer.name ="Pre-flooding network") 
+                     layer.name ="Pre-flooding centrality network") 
 
 ```
 
@@ -508,7 +508,7 @@ ggplot(centrality_both, aes(x=centrality, fill=event)) +
     theme_minimal()
 ```
 
-The following grouped bar plot illustrates the sum of the edge betweenness values classified by their quantiles for both events, before and after the flooding. The X-Axis is categorized in the four quantiles, while yhe y-axis summed up the betweenness values of these quartiles. In Both events a similar pattern is found, the roads belonging to the Q4 caused most of the edge beetweenness of the network. The `r round(st_length(st_union(filter(centrality_pre, centrality < quantile(centrality_pre$centrality)[4])["the_geom"]))/1000)` km that comprised all the roads below the fourth quartile only contributed to `r round(summarise(filter(sf::st_drop_geometry(centrality_pre), centrality < quantile(centrality_pre$centrality)[4])["centrality"], centrality = sum(centrality))/sum(sf::st_drop_geometry(centrality_pre)$centrality) * 100)` for the preflooding scenario. Therefore, the findings shown an positive skewed distribution, where a small proportion of roads were responsible for the  roads held responsible for the `r round(summarise(filter(sf::st_drop_geometry(centrality_pre), centrality > quantile(centrality_pre$centrality)[4])["centrality"], centrality = sum(centrality))/sum(sf::st_drop_geometry(centrality_pre)$centrality) * 100)`% of the centrality of the network.
+The following grouped bar plot illustrates the sum of the edge betweenness values classified by their quantiles for both events, before and after the flooding. The X-Axis is categorized in the four quantiles, while yhe y-axis summed up the betweenness values of these quartiles. In Both events a similar pattern is found, the roads belonging to the Q4 caused most of the edge beetweenness of the network. The `r round(st_length(st_union(filter(centrality_pre, centrality < quantile(centrality_pre$centrality)[4])["the_geom"]))/1000)` km that comprised all the roads below the fourth quartile only contributed to `r round(summarise(filter(sf::st_drop_geometry(centrality_pre), centrality < quantile(centrality_pre$centrality)[4])["centrality"], centrality = sum(centrality))/sum(sf::st_drop_geometry(centrality_pre)$centrality) * 100)`% for the preflooding scenario connectivit" . Therefore, the findings shown an positive skewed distribution, where a small proportion of roads were responsible for the  roads held responsible for the `r round(summarise(filter(sf::st_drop_geometry(centrality_pre), centrality > quantile(centrality_pre$centrality)[4])["centrality"], centrality = sum(centrality))/sum(sf::st_drop_geometry(centrality_pre)$centrality) * 100)`% of the centrality of the network.
 
 
 ```{r}
@@ -793,6 +793,8 @@ p <- ggplot(hospitals_closeness_long, aes(x=closeness_value, y=reorder(letter, d
 
 ![](/media/accessibility_test2.png)
 
+### Closeness:
+
 ```{r}
 #| code-summary: "R: Changes on the accesibiliy based on closeness"
 hospitals_closeness_both <- st_read(eisenberg_connection, "hospitals_closeness_both") 
@@ -830,8 +832,6 @@ DT::datatable(subset(df_hospitals_closeness_both_compare,
   backgroundRepeat = 'no-repeat',
   backgroundPosition = 'center')
 ```
-
-### Closeness:
 
 ```{r}
 #| code-summary: "R: Visualizing closeness of the healthcare facilities"
@@ -874,6 +874,9 @@ leaflet(closseness_df) |>
 
 ```{r}
 #| code-summary: "R: Creating the table showing closeness values"
+#| eval: false
+#| echo: false
+
 closseness <-sf::st_read(eisenberg_connection, 
                             layer = "clossness_hospital_porto")
 closseness_no_geom <- closseness |>  
