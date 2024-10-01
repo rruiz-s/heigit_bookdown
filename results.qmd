@@ -475,6 +475,36 @@ DT::datatable(subset(df_centrality_negative_outlier_distinct_address, select=c("
 ```
 
 
+```{r}
+#| eval: false
+df_centrality_bind <- bind_rows(df_centrality_pre, df_centrality_post)
+
+df_centrality_bind <- df_centrality_bind |> 
+  mutate(centrality_fct = case_when(
+    centrality >= 1 & centrality < 53 ~ "[1-53]",  # Change > to >=
+    centrality >= 53 & centrality < 117 ~ "[53-117]",
+    centrality >= 117 & centrality < 700 ~ "[117-700]",
+    centrality >= 700 & centrality < 1644 ~ "[700-1644]",
+    centrality == 0 ~ "[0]",
+    TRUE ~ NA_character_  
+  ))
+
+
+library(metan)
+library(ggsankey)
+library(highcharter)
+
+d <- select(df_centrality_bind, c(event, centrality_fct))
+
+
+hchart(data_to_sankey(d), "sankey", name = "Centrality pre and post flooding") |> 
+hc_title(text= "Sankey Diagram: Porto Alegre") %>%
+  hc_subtitle(text= "Centrality analysis")  %>%
+  hc_caption(text = "<b>Change on the distribution edge betweenness<b>")%>%
+  hc_add_theme(hc_theme_economist())
+```
+
+
 ```{=html}
 
 <iframe width="760" height="500" src="/media/centrality_table_results.html" title = "Sum Edge Betweenness in the Urban Settlement located in Porto Alegre "></iframe>
