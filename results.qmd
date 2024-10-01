@@ -124,7 +124,7 @@ mapview(ghs_build[[1]],
           layer.name="Weighted samples",
           zcol="sample",
           col.regions=c("#2D5CA4","#00A3A0"),
-          hide=TRUE,
+          hide=FALSE,
           cex= 3) +
   mapview(regular_sampling_100,
           color = "darkgray",
