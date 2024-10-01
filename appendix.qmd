@@ -1,9 +1,7 @@
 # Performance tests
+### Performance
 
 ```{r}
-#| warning: false
-#| message: false
-
 lapply(c("readODS","tidyverse","ggplot2","DT"), require, character.only =TRUE)
 performance <- readODS::read_ods("metrics.ods")
 df <- performance |> dplyr::select(c("number_od","method","algorithm","time","max_centrality","count_rows","query","analyze")) |> filter(!is.na(time) & method=='naive')
@@ -39,8 +37,32 @@ DT::datatable(subset(df, select=c("number_od","algorithm","time","query","analyz
 ```
 
 
-## Naive methodology using array
-### 200
+## 10
+```{sql}
+#| eval: false
+
+
+```
+
+
+## 50
+```{sql}
+#| eval: false
+
+
+```
+
+
+## 100
+
+```{sql}
+#| eval: false
+
+
+```
+
+
+## 200
 
 ```{sql}
 #| eval: false
@@ -95,7 +117,7 @@ EXPLAIN ANALYZE
 				      ORDER BY centrality DESC;  
 ```
 
-### 300 
+## 300 
 
 ```{sql}
 #| eval:  false
@@ -226,11 +248,6 @@ select max(centrality) FROM porto_100_dijkstra_agg ;
 ---- Number of rows
 select count(*) FROM porto_100_dijkstra_agg ;
 ```
-
-
-## Method using bounding box
-
-## Method using duckdb
 
 ## pgr_astrar()
 

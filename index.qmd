@@ -7,7 +7,11 @@
 <iframe width="760" height="500" src="/media/hot_intro.html" title = "Sum Edge Betweenness in the Urban Settlement located in Porto Alegre"></iframe>
 ```
 
-In progress
+### What problems are involved withnt the project context?
+
+### What is the background to these problems?
+
+### What soilutions are the stakeholders considering?
 
 ## Conceptual design
 
@@ -26,7 +30,6 @@ accessibility metrics?
 
 ```{r}
 #| eval: false
-#| echo: false
 
 library(tidygeocoder)
 

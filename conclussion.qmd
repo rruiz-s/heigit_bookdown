@@ -9,5 +9,6 @@ lapply(c("tidyverse","DT","leaflet","sf"),
 ```
 
 # Conclussion
-
-In progress
+Key variables:
+- Centrality ---> vulnerability-resilience
+- Accessibility ----> vulnerability-resilience
