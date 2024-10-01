@@ -66,7 +66,7 @@ osmium extract -b -51.2791,-30.1722,-50.9407,-29.8048 sul-240501.osm.pbf -o puer
 
 ```{=html}
 
-<iframe width="760" height="500" src="/media/map_sampling_example_v2.html" title = "Inspect of the components in the graph network "></iframe>
+<iframe width="760" height="500" src="/media/map_sampling_example_v0.html" title = "Inspect of the components in the graph network "></iframe>
 ```
 
 ```{r}
