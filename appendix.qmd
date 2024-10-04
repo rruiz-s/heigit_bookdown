@@ -1,10 +1,13 @@
-# Performance tests
-### Performance
+# Performance 
+## Routing
 
 ```{r}
+#| warning: false
+#| message: false
+
 lapply(c("readODS","tidyverse","ggplot2","DT"), require, character.only =TRUE)
 performance <- readODS::read_ods("metrics.ods")
-df <- performance |> dplyr::select(c("number_od","method","algorithm","time","max_centrality","count_rows","query","analyze")) |> filter(!is.na(time) & method=='naive')
+df <- performance |> dplyr::select(c("number_od","method","algorithm","time","max_centrality","count_rows","query","analyze")) |> filter(!is.na(time) & method %in% c('naive','array_agg','st_bbox'))
 
 ggplot(df,aes(x=number_od, y=time, group = algorithm)) +
   labs(x="Number of Origin-Destination (OD)",
@@ -12,6 +15,15 @@ ggplot(df,aes(x=number_od, y=time, group = algorithm)) +
        title="PostgreSQL's queries performance") +
   geom_line(aes(color=algorithm)) +
    geom_point(aes(color=algorithm)) +
+  theme_minimal()
+
+
+ggplot(filter(df, method %in% c('st_bbox','naive') & algorithm == 'pgr_astrar()' & number_od >=100),aes(x=number_od, y=time, group = method)) +
+  labs(x="Number of Origin-Destination (OD)",
+       y="time (ms)",
+       title="PostgreSQL's queries performance") +
+  geom_line(aes(color=method)) +
+   geom_point(aes(color=method)) +
   theme_minimal()
 
 DT::datatable(subset(df, select=c("number_od","algorithm","time","query","analyze")), 
@@ -37,32 +49,7 @@ DT::datatable(subset(df, select=c("number_od","algorithm","time","query","analyz
 ```
 
 
-## 10
-```{sql}
-#| eval: false
-
-
-```
-
-
-## 50
-```{sql}
-#| eval: false
-
-
-```
-
-
-## 100
-
-```{sql}
-#| eval: false
-
-
-```
-
-
-## 200
+## Naive
 
 ```{sql}
 #| eval: false
@@ -117,76 +104,50 @@ EXPLAIN ANALYZE
 				      ORDER BY centrality DESC;  
 ```
 
-## 300 
+## Method bounding box
 
 ```{sql}
-#| eval:  false
+#| eval: false
 
+EXPLAIN ANALYZE 
+CREATE TABLE centrality_200_200_porto_astrar_bbox AS 
+SELECT    
+	b.id,
+	b.the_geom,
+	count(the_geom) as centrality
+FROM 
+	pgr_astar(  
+		'SELECT id,
+			    source,
+			    target,
+			    cost,
+			    x1,
+			    y1,
+			    x2,
+			    y2  
+			FROM 
+				porto_alegre_net_pre_component_one_star
+			WHERE the_geom && (SELECT box FROM bbox)',
+			 ARRAY(SELECT net_id FROM weight_sampling_200_origin),
+			 ARRAY(SELECT net_id FROM weight_sampling_200_destination),
+			directed:=TRUE,
+			heuristic:=2) j
+			LEFT JOIN 
+				porto_alegre_net_pre_component_one_star AS b
+			ON 
+				j.edge = b.id
+			GROUP BY  
+				b.id,
+				b.the_geom
+			ORDER BY 
+				centrality DESC;   
 
----- 300
-
----- Create 300 origin
-CREATE TABLE sampling_weight_300_origin  AS
-with porto_300_origin AS (
-        SELECT
-            * 
-        FROM 
-            od_2728_snapped_origin 
-        ORDER BY random() LIMIT 300)
-        SELECT * FROM  porto_300_origin;  
----- Create 300 destination
-CREATE TABLE sampling_weight_300_destination  AS
-with porto_300_destination AS (
-        SELECT
-            * 
-        FROM 
-            od_2728_snapped_origin 
-        ORDER BY random() LIMIT 300)
-        SELECT * FROM  porto_300_destination;  
----- Create index for origin
-CREATE INDEX idx_sampling_weight_300_origin_net_id ON sampling_weight_300_origin USING hash(net_id);
-CREATE INDEX idx_sampling_weight_300_origin_geom ON sampling_weight_300_origin USING gist(the_geom);
----- Create index for destination
-CREATE INDEX idx_sampling_weight_300_destination_net_id ON sampling_weight_300_destination USING hash(net_id);
-CREATE INDEX idx_sampling_weight_300_destination_geom ON sampling_weight_300_destination USING gist(the_geom);
----- Cluster
-CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
----- Vacuum clean
-VACUUM(full, ANALYZE) sampling_weight_300_origin;
-VACUUM(full, ANALYZE) sampling_weight_300_destination;
-VACUUM(full, ANALYZE) porto_alegre_net_largest;
---- Run query
-
- EXPLAIN ANALYZE
- CREATE TABLE centrality_300_300_porto AS
- SELECT   b.ogc_fid,
- b.the_geom,
- count(the_geom) as centrality 
- FROM  pgr_dijkstra('SELECT  ogc_fid AS id,
-							  fromid AS source,
-							toid AS target,
-							weight AS cost
-				      FROM porto_alegre_net_largest',
-				      ARRAY(SELECT net_id AS start_id FROM sampling_weight_300_origin  ),
-				      ARRAY(SELECT net_id AS end_id FROM sampling_weight_300_destination ),
-				      directed := TRUE) j
-				      left JOIN porto_alegre_net_largest AS b
-				      ON j.edge = b.ogc_fid
-				      GROUP BY  b.ogc_fid, b.the_geom
-				      ORDER BY centrality DESC;  
-				      
---- check max centrality				     
-SELECT max(centrality) FROM centrality_300_300_porto ;
---- check max rows
-SELECT  count(*) FROM centrality_10_10_porto;
 ```
-
 
 ## Method array_agg()
 
 ```{sql}
 #| eval: false
-
 
 ---- create origin_destination
 CREATE TEMP TABLE vertices_lookup_10

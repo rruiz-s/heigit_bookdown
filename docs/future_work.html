@@ -191,7 +191,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./appendix.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Performance tests</span></span></a>
+ <span class="menu-text"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Performance</span></span></a>
   </div>
 </li>
           <li class="sidebar-item">
@@ -217,6 +217,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#perforamance" id="toc-perforamance" class="nav-link" data-scroll-target="#perforamance"><span class="header-section-number">5.3</span> Perforamance</a>
   <ul class="collapse">
   <li><a href="#flood-mask" id="toc-flood-mask" class="nav-link" data-scroll-target="#flood-mask"><span class="header-section-number">5.3.1</span> Flood mask</a></li>
+  <li><a href="#buildings" id="toc-buildings" class="nav-link" data-scroll-target="#buildings"><span class="header-section-number">5.3.2</span> Buildings</a></li>
   </ul></li>
   </ul>
 </nav>
@@ -270,8 +271,54 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="flood-mask" class="level3" data-number="5.3.1">
 <h3 data-number="5.3.1" class="anchored" data-anchor-id="flood-mask"><span class="header-section-number">5.3.1</span> Flood mask</h3>
 <p>Using the dilate and erode method described in the slide 95/187 (<a href="https://cdn2.hubspot.net/hubfs/2283855/PostGIS%20Day%202019%20-%20Overview.pdf">link</a>) could remove small islands that increase the computational costs. A use case of this technique is observed when simplifying coastlines (<a href="https://github.com/rruiz-s/heigit-gima/wiki/2.-Data-preparation#post-scenario">link</a>)</p>
+</section>
+<section id="buildings" class="level3" data-number="5.3.2">
+<h3 data-number="5.3.2" class="anchored" data-anchor-id="buildings"><span class="header-section-number">5.3.2</span> Buildings</h3>
+<section id="download-from-overture" class="level4" data-number="5.3.2.1">
+<h4 data-number="5.3.2.1" class="anchored" data-anchor-id="download-from-overture"><span class="header-section-number">5.3.2.1</span> Download from Overture</h4>
+<div class="cell">
+<details>
+<summary>Import buildings and roads from Overture</summary>
+<div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="do">## Import data</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(overturemapsr)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>overture_roads <span class="ot">&lt;-</span> <span class="fu">record_batch_reader</span>(<span class="at">overture_type =</span> <span class="st">'segment'</span>, <span class="at">bbox =</span> sf<span class="sc">::</span><span class="fu">st_bbox</span>(ghs))</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>overture_buildings <span class="ot">&lt;-</span> <span class="fu">record_batch_reader</span>(<span class="at">overture_type =</span> <span class="st">'buildings'</span>, <span class="at">bbox =</span> sf<span class="sc">::</span><span class="fu">st_bbox</span>(ghs))</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="do">## Subset data</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>overture_roads_subset <span class="ot">&lt;-</span> overture_roads <span class="sc">|&gt;</span> dplyr<span class="sc">::</span><span class="fu">select</span>(<span class="fu">c</span>(id, geometry,class,update_time, subtype))</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="do">## Export data</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="do">### Local file</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(arrow)</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(sfarrow)</span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>sfarrow<span class="sc">::</span><span class="fu">st_write_parquet</span>(overture_roads, <span class="st">"overture_roads.parquet"</span>)</span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="do">### Database</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(DBI)</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(nanoarrow)</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>DBI<span class="sc">::</span><span class="fu">dbWriteTable</span>(eisenberg_connection, <span class="st">"overture_roads_subset"</span>, overture_roads_subset)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+</div>
+</section>
+<section id="processing-in-duckdb" class="level4" data-number="5.3.2.2">
+<h4 data-number="5.3.2.2" class="anchored" data-anchor-id="processing-in-duckdb"><span class="header-section-number">5.3.2.2</span> Processing in duckdb</h4>
+<div class="cell">
+<details>
+<summary>Show the code</summary>
+<div class="sourceCode cell-code" id="cb4"><pre class="sourceCode sql code-with-copy"><code class="sourceCode sql"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">--- Using Duckdb</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>INSTALL spatial;</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>LOAD spatial;</span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">----- Importing buildings &amp; flood extent from file to duckdb</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="kw">CREATE</span> <span class="kw">TABLE</span> porto_buildings <span class="kw">AS</span> <span class="kw">SELECT</span> <span class="kw">id</span>, st_geomfromwkb(geometry) <span class="kw">as</span> geom  <span class="kw">FROM</span> <span class="st">'porto_buildings_overture.parquet'</span>;</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="kw">CREATE</span> <span class="kw">TABLE</span>  flood <span class="kw">AS</span> <span class="kw">SELECT</span> <span class="op">*</span> <span class="kw">FROM</span> st_read(<span class="st">'flooding_porto_cleaned.geojson'</span>);</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="co">---- Filtering building in flood extent</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="kw">CREATE</span> <span class="kw">TABLE</span> flood_building <span class="kw">AS</span> <span class="kw">SELECT</span> buildings.<span class="op">*</span> <span class="kw">FROM</span> porto_buildings <span class="kw">as</span> buildings, flood <span class="kw">WHERE</span> st_intersects(buildings.geom, flood.geom);</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="co">--- Export data</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> flood_building <span class="kw">TO</span> <span class="st">'flood_building_v2.gpkg'</span> <span class="kw">WITH</span> (FORMAT GDAL, DRIVER <span class="st">'GPKG'</span>);</span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="kw">COPY</span> porto_buildings <span class="kw">TO</span> <span class="st">'porto_buildings.gpkg'</span> <span class="kw">WITH</span> (FORMAT GDAL, DRIVER <span class="st">'GPKG'</span>);</span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+</div>
 
 
+</section>
 </section>
 </section>
 
@@ -632,7 +679,7 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
   </div>
   <div class="nav-page nav-page-next">
       <a href="./appendix.html" class="pagination-link">
-        <span class="nav-page-text"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Performance tests</span></span> <i class="bi bi-arrow-right-short"></i>
+        <span class="nav-page-text"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Performance</span></span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>

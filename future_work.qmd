@@ -17,3 +17,47 @@ data.frame(
 
 Using the dilate and erode method described in the slide 95/187 ([link](https://cdn2.hubspot.net/hubfs/2283855/PostGIS%20Day%202019%20-%20Overview.pdf)) could remove small islands that increase the computational costs. A use case of this technique is observed when simplifying coastlines ([link](https://github.com/rruiz-s/heigit-gima/wiki/2.-Data-preparation#post-scenario))
 
+### Buildings
+#### Download from Overture
+
+
+```{r}
+#| eval: false
+#| code-summary: Import buildings and roads from Overture
+## Import data
+library(overturemapsr)
+overture_roads <- record_batch_reader(overture_type = 'segment', bbox = sf::st_bbox(ghs))
+overture_buildings <- record_batch_reader(overture_type = 'buildings', bbox = sf::st_bbox(ghs))
+## Subset data
+overture_roads_subset <- overture_roads |> dplyr::select(c(id, geometry,class,update_time, subtype))
+## Export data
+### Local file
+library(arrow)
+library(sfarrow)
+sfarrow::st_write_parquet(overture_roads, "overture_roads.parquet")
+### Database
+library(DBI)
+library(nanoarrow)
+DBI::dbWriteTable(eisenberg_connection, "overture_roads_subset", overture_roads_subset)
+```
+
+
+#### Processing in duckdb
+```{sql}
+#| eval: false
+
+--- Using Duckdb
+INSTALL spatial;
+LOAD spatial;
+----- Importing buildings & flood extent from file to duckdb
+CREATE TABLE porto_buildings AS SELECT id, st_geomfromwkb(geometry) as geom  FROM 'porto_buildings_overture.parquet';
+CREATE TABLE  flood AS SELECT * FROM st_read('flooding_porto_cleaned.geojson');
+---- Filtering building in flood extent
+CREATE TABLE flood_building AS SELECT buildings.* FROM porto_buildings as buildings, flood WHERE st_intersects(buildings.geom, flood.geom);
+--- Export data
+COPY flood_building TO 'flood_building_v2.gpkg' WITH (FORMAT GDAL, DRIVER 'GPKG');
+COPY porto_buildings TO 'porto_buildings.gpkg' WITH (FORMAT GDAL, DRIVER 'GPKG');
+---
+
+
+```

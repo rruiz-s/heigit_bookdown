@@ -489,6 +489,7 @@ df_centrality_bind <- df_centrality_bind |>
     TRUE ~ NA_character_  
   ))
 
+df_centrality_pre
 
 library(metan)
 library(ggsankey)
@@ -502,6 +503,158 @@ hc_title(text= "Sankey Diagram: Porto Alegre") %>%
   hc_subtitle(text= "Centrality analysis")  %>%
   hc_caption(text = "<b>Change on the distribution edge betweenness<b>")%>%
   hc_add_theme(hc_theme_economist())
+
+#### secon sankey diagram
+library("ggalluvial")
+pre_network_largest
+sankey_pre_centrality <- centrality_pre |> dplyr::select(c("centrality", "the_geom","event")) |>
+                                            mutate(length = st_length(the_geom))
+sankey_post_centrality <- centrality_post |> dplyr::select(c("centrality", "the_geom","event")) |> 
+                                              mutate(length = st_length(the_geom))
+sankey_na_centrality <- pre_network_largest |> mutate(centrality= rep(0, nrow(pre_network_largest)),
+                                               event = rep ("not-used", nrow(pre_network_largest)),
+                                               length = st_length(the_geom)) |> 
+                              dplyr::select(c("centrality", "the_geom","event","length"))
+sankey_all_centrality <- rbind(sankey_pre_centrality, sankey_post_centrality,sankey_na_centrality)
+
+sankey_all_centrality$centrality_fct <- cut(sankey_all_centrality$centrality,
+                                  breaks = c(1,13,53,117,1644),
+                                  labels= c("[1-13]","[13-53]","[53-117]","[117-1644]"),
+                                  include.lowest =TRUE)
+
+# Summarize the total length for each event and centrality quartile
+sankey_post_pre <-rbind(sankey_pre_centrality, sankey_post_centrality) 
+sankey_post_pre$centrality_fct <- cut(sankey_post_pre$centrality,
+                                  breaks = c(1,13,53,117,700,2000),
+                                  labels= c("[1-13]","[13-53]","[53-117]","[117-300]","[300-2000]"),
+                                  include.lowest =TRUE)
+
+sankey_agg <- sankey_post_pre %>% sf::st_drop_geometry() |> 
+  dplyr::group_by(event, centrality_fct) %>%
+  dplyr::summarise(total_length = sum(as.numeric(length))) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(
+    total_length_all = sum(total_length),
+    percent = (total_length / total_length_all) * 100
+  )
+
+(unlist(dplyr::summarise(group_by(df_sankey_post_pre, event), t_length = sum(length))[1,2])/ unlist(dplyr::summarise(group_by(df_sankey_post_pre, event), t_length = sum(length))[2,2])) * unlist(dplyr::summarise(group_by(df_sankey_post_pre, event), t_length = sum(length))[1,2])
+#### oooootro intentooooo 
+library(forcats)
+library(data.table)
+sankey_wider <- sankey_post_pre |> pivot_wider(names_from= event, values_from = centrality)
+df_sankey_wider <- sankey_wider |> sf::st_drop_geometry() 
+  
+df_sankey_wider <- df_sankey_wider |> mutate(`pre-flooding` = 
+                            case_when(is.na(df_sankey_wider$`pre-flooding`) ~ 0,
+                                       .default=df_sankey_wider$`pre-flooding`),
+                          `post-flooding`= case_when(is.na(df_sankey_wider$`post-flooding`) ~ 0,
+                                      .default=df_sankey_wider$`post-flooding`)
+                          )
+df_sankey_wider_zero <- df_sankey_wider |> 
+    mutate(pre_flooding_fct = cut(`pre-flooding`,
+                                  breaks = c(-Inf, 0, 1, 13, 53, 117, 700, 1645, Inf),
+                                  labels = c("[0]", "[1]", "[1-13]", "[13-53]", "[53-117]", "[117-300]", "[300-1645]", "[>1645]"),
+                                  include.lowest = TRUE),
+           pre_flooding_fct = forcats::fct_explicit_na(pre_flooding_fct, "[0]"),
+           post_flooding_fct = cut(`post-flooding`,
+                                   breaks = c(-Inf, 0, 1, 13, 53, 117, 700, 1645, Inf),
+                                   labels = c("[0]", "[1]", "[1-13]", "[13-53]", "[53-117]", "[117-300]", "[300-1645]", "[>1645]"),
+                                   include.lowest = TRUE),
+           post_flooding_fct = forcats::fct_explicit_na(post_flooding_fct, "[0]"))
+
+
+
+hchart(data_to_sankey(df_sankey_post_pre_wider_v4), "sankey", name = "Centrality pre and post flooding")
+
+df_sankey_wider_zero |> select(c(pre_flooding_fct, post_flooding_fct)) |>  group_by(pre_flooding_fct, post_flooding_fct) |> summary(n=n(), .groups= "drop")
+
+ggplot(data = df_sankey_wider_zero,
+       aes(axis1 = pre_flooding_fct, axis2 = post_flooding_fct, 
+           y = Freq)) +
+  scale_x_discrete(limits = c("Class", "Sex", "Age"), expand = c(.2, .05)) +
+  xlab("Demographic") +
+  geom_alluvium(aes(fill = Survived)) +
+  geom_stratum() +
+  geom_text(stat = "stratum", aes(label = after_stat(stratum))) +
+  theme_minimal()
+
+library(networkD3)
+df_network <- sankey_post_pre |> sf::st_drop_geometry() |> select(c("event","centrality_fct"))
+df_network_v2 <- df_network |> group_by(centrality_fct, event) |> summarise(n=n())
+df_network_v2 <- df_network_v2 %>%
+  bind_rows(tibble(centrality_fct = "[300-2000]",
+                   event = "post-flooding",
+                   n = 0))
+
+links <- data.frame(source=c(df_network_v2$event),
+                    target = c(df_network_v2$centrality_fct),
+                    value = c(df_network_v2$n))
+
+nodes <- data.frame(
+  name=c(as.character(links$source), 
+  as.character(links$target)) %>% unique()
+)
+
+links$IDsource <- match(links$source, nodes$name)-1 
+links$IDtarget <- match(links$target, nodes$name)-1
+
+## nice gepeto
+
+  
+
+df_long <- df_network_v2 |> 
+    ungroup() |> 
+    add_row(centrality_fct = "[300-2000]", event = "post-flooding", n = 0) |> 
+    pivot_wider(names_from = event, values_from = n) |> 
+    mutate(alluvium = row_number())
+
+ggplot(data = df_long,
+       aes(axis1 = centrality_fct, axis2 = event, y = n)) +
+  geom_alluvium(aes(fill = event)) +
+  geom_stratum() +
+ geom_text(stat = "stratum", aes(label = after_stat(stratum))) +
+  scale_x_discrete(limits = c("Pre-Centrality", "Post-Centrality")) +
+  theme_minimal() +
+  ggtitle("Centrality Analysis Before and After Flooding",
+          "Comparing centrality distributions across events")
+
+
+ggplot(df_long,
+       aes(axis1 = `pre-flooding`, axis2 = alluvium, y = `post-flooding`)) +
+  geom_alluvium(aes(fill = centrality_fct)) +
+  geom_stratum(width = 1/6) +
+  geom_text(stat = "stratum", aes(label = after_stat(stratum))) +
+  scale_x_discrete(limits = c("Centrality", "Alluvium"),
+                   expand = c(.1, .1)) +
+  labs(title = "Alluvial Plot of Centrality Pre- and Post-Flooding",
+       y = "Number of Roads", x = "Centrality Ranges") +
+  theme_minimal()
+
+df_long <- df_long %>%
+  pivot_longer(cols = c(`post-flooding`, `pre-flooding`), 
+               names_to = "event", 
+               values_to = "n")
+
+df_long <- df_sankey_wider_zero |> 
+  pivot_longer(cols = c(`pre-flooding`, `post-flooding`), 
+               names_to = "event", 
+               values_to = "n")
+ggplot(df_long, aes(axis1 = pre_flooding_fct, 
+                    axis2 = post_flooding_fct, 
+                    y = n)) +
+  geom_alluvium(aes(fill = event), width = 1/12) +
+  geom_stratum() +
+  geom_text(stat = "stratum", aes(label = after_stat(stratum)), 
+            size = 3, color = "white") +
+  scale_x_discrete(limits = c("Pre-Flooding Centrality", "Post-Flooding Centrality"),
+                   expand = c(0.05, 0.05)) +
+  labs(title = "Alluvial Diagram of Centrality Changes",
+       x = "Centrality Categories",
+       y = "Number of Roads (n)") +
+  theme_minimal() +
+  theme(legend.position = "top")
+
 ```
 
 
