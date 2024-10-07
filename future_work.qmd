@@ -43,6 +43,7 @@ DBI::dbWriteTable(eisenberg_connection, "overture_roads_subset", overture_roads_
 
 
 #### Processing in duckdb
+
 ```{sql}
 #| eval: false
 
@@ -50,15 +51,35 @@ DBI::dbWriteTable(eisenberg_connection, "overture_roads_subset", overture_roads_
 INSTALL spatial;
 LOAD spatial;
 ----- Importing buildings & flood extent from file to duckdb
-CREATE TABLE porto_buildings AS SELECT id, st_geomfromwkb(geometry) as geom  FROM 'porto_buildings_overture.parquet';
-CREATE TABLE  flood AS SELECT * FROM st_read('flooding_porto_cleaned.geojson');
----- Filtering building in flood extent
-CREATE TABLE flood_building AS SELECT buildings.* FROM porto_buildings as buildings, flood WHERE st_intersects(buildings.geom, flood.geom);
---- Export data
-COPY flood_building TO 'flood_building_v2.gpkg' WITH (FORMAT GDAL, DRIVER 'GPKG');
-COPY porto_buildings TO 'porto_buildings.gpkg' WITH (FORMAT GDAL, DRIVER 'GPKG');
----
 
+---- Buildings
+CREATE TABLE porto_buildings AS
+    SELECT 
+        id,
+        st_geomfromwkb(geometry) as geom
+    FROM 
+        'porto_buildings_overture.parquet';
+        
+--- Floodig      
+CREATE TABLE  flood AS
+    SELECT
+        * 
+    FROM 
+      st_read('flooding_porto_cleaned.geojson');
+---- Filtering building in flood extent
+CREATE TABLE flood_building AS 
+    SELECT 
+      buildings.*
+    FROM
+      porto_buildings AS buildings,
+      flood 
+    WHERE
+      st_intersects(buildings.geom, flood.geom);
+--- Export data
+COPY flood_building TO
+  'flood_building_v2.gpkg' WITH (FORMAT GDAL, DRIVER 'GPKG');
+COPY porto_buildings TO 
+   'porto_buildings.gpkg' WITH (FORMAT GDAL, DRIVER 'GPKG');
 
 ```
 
@@ -67,7 +88,7 @@ COPY porto_buildings TO 'porto_buildings.gpkg' WITH (FORMAT GDAL, DRIVER 'GPKG')
 ### Data 
 
 ```{sql}
-#| connection = eisenberg_connection
+#| connection: eisenberg_connection
 #| eval: false
 
 CREATE TABLE centrality_both_sankey  AS

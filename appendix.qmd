@@ -1,30 +1,171 @@
 # Performance 
+
+Poner aqui el problema
+
+## Data
+### Direct: Download files
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+library(DT)
+library(tidyverse)
+read_csv("data_table.csv") |> dplyr::select(c("file","section","url")) |>
+  datatable(escape= FALSE)
+```
+
+
+### Indirect: Build from queries
+
+**Origin-Destination matrix**
+
+```{sql}
+#| eval: false
+#| connection: eisenberg_connection
+#| code-summary: "Create OD matrix weighted sampling"
+
+
+---- Create 200 origin
+CREATE TABLE sampling_weight_200_origin  AS
+with porto_200_origin AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_origin 
+        ORDER BY random() LIMIT 200)
+        SELECT * FROM  porto_200_origin;  
+---- Create 200 destination
+CREATE TABLE sampling_weight_200_destination  AS
+with porto_200_destination AS (
+        SELECT
+            * 
+        FROM 
+            od_2728_snapped_origin 
+        ORDER BY random() LIMIT 200)
+        SELECT * FROM  porto_200_destination;  
+```
+
+**Creating table with x,y for pgr_astar()**
+
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+#| code-summary: "Create network table with x,y for pgr_astar()"
+
+CREATE TABLE porto_alegre_net_largest_astar AS		    
+WITH porto_alegre_net_astart AS (
+SELECT 
+  *,
+  st_startpoint(the_geom) AS start_pt,
+  st_endpoint(the_geom) AS enstart_pt
+FROM 
+  porto_alegre_net_largest AS net)
+SELECT *,
+	st_x(start_pt) AS x1,
+	st_y(start_pt) AS y1,
+	st_x(end_pt) AS x2,
+	st_y(end_pt) AS y2
+FROM 
+  porto_alegre_net_astart;
+```
+
+
+**Applying spatial index**
+
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+#| code-summary: "Applying index to weighted OD matrix"
+
+---- Create index for origin
+CREATE INDEX idx_sampling_weight_200_origin_net_id ON sampling_weight_200_origin USING hash(net_id);
+CREATE INDEX idx_sampling_weight_200_origin_geom ON sampling_weight_200_origin USING gist(the_geom);
+---- Create index for destination
+CREATE INDEX idx_sampling_weight_200_destination_net_id ON sampling_weight_200_destination USING hash(net_id);
+CREATE INDEX idx_sampling_weight_200_destination_geom ON sampling_weight_200_destination USING gist(the_geom);
+---- Cluster
+CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
+---- Vacuum clean
+VACUUM(full, ANALYZE) sampling_weight_200_origin;
+VACUUM(full, ANALYZE) sampling_weight_200_destination;
+VACUUM(full, ANALYZE) porto_alegre_net_largest;
+```
+
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+#| code-summary: "Create OD matrix regular sampling for agg_array()"
+
+---- create origin_destination
+CREATE TEMP TABLE vertices_lookup_10
+AS             
+WITH all_pairs AS (
+  SELECT f.net_id AS fid, f.the_geom AS fgeom,
+         t.net_id AS tid, t.the_geom AS tgeom
+    FROM random_10_origin AS f,
+         random_10_destination AS t
+),
+vertices AS (
+  SELECT fid, tid,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> fgeom
+       LIMIT 1) AS fv,
+     (SELECT id
+        FROM porto_alegre_net_largest_vertices_pgr AS way
+       ORDER BY way.the_geom <-> tgeom
+       LIMIT 1) AS tv
+  FROM all_pairs
+)
+SELECT * FROM vertices;
+---- Number of OD
+SELECT count(*) FROM vertices_lookup_10;
+```
+
+
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+#| code-summary: "Applying index to network for astrar()"
+
+---- adding spatial index
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_the_geom ON porto_alegre_net_largest_astar  USING gist(the_geom);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_start ON porto_alegre_net_largest_astar  USING gist(start_pt);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_end ON porto_alegre_net_largest_astar USING gist(end_pt);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_x1 ON porto_alegre_net_largest_astar  USING btree(x1);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_y1 ON porto_alegre_net_largest_astar USING btree(y1);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_x2 ON porto_alegre_net_largest_astar USING btree(x2);
+CREATE INDEX idx_porto_alegre_net_largest_astar_net_y2 ON porto_alegre_net_largest_astar USING btree(y2);                      
+```
+
+
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+#| code-summary:  "Applying index on vertices_lookup"
+
+---- Create index
+CREATE INDEX idx_vertices_lookup_10_fid ON vertices_lookup_10 USING hash(fid);
+CREATE INDEX idx_vertices_lookup_10_tid ON vertices_lookup_10 USING hash(tid);
+CREATE INDEX idx_vertices_lookup_10_fv ON vertices_lookup_10 USING hash(fv);
+CREATE INDEX idx_vertices_lookup_10_tv ON vertices_lookup_10 USING hash(tv);
+---- Vacuum and clean
+VACUUM(full, ANALYZE) vertices_lookup_10;
+VACUUM(full, ANALYZE) porto_alegre_net_largest;
+```
+
 ## Routing
 
 ```{r}
 #| warning: false
 #| message: false
+#| echo: false
 
 lapply(c("readODS","tidyverse","ggplot2","DT"), require, character.only =TRUE)
 performance <- readODS::read_ods("metrics.ods")
 df <- performance |> dplyr::select(c("number_od","method","algorithm","time","max_centrality","count_rows","query","analyze")) |> filter(!is.na(time) & method %in% c('naive','array_agg','st_bbox'))
-
-ggplot(df,aes(x=number_od, y=time, group = algorithm)) +
-  labs(x="Number of Origin-Destination (OD)",
-       y="time (ms)",
-       title="PostgreSQL's queries performance") +
-  geom_line(aes(color=algorithm)) +
-   geom_point(aes(color=algorithm)) +
-  theme_minimal()
-
-
-ggplot(filter(df, method %in% c('st_bbox','naive') & algorithm == 'pgr_astrar()' & number_od >=100),aes(x=number_od, y=time, group = method)) +
-  labs(x="Number of Origin-Destination (OD)",
-       y="time (ms)",
-       title="PostgreSQL's queries performance") +
-  geom_line(aes(color=method)) +
-   geom_point(aes(color=method)) +
-  theme_minimal()
 
 DT::datatable(subset(df, select=c("number_od","algorithm","time","query","analyze")), 
               class='compact', rownames=FALSE, escape=FALSE, caption='Data description',
@@ -48,43 +189,29 @@ DT::datatable(subset(df, select=c("number_od","algorithm","time","query","analyz
                     backgroundPosition='center')
 ```
 
+## Method
 
-## Naive
+```{r}
+ggplot(filter(df, method %in% c('st_bbox','naive') & algorithm == 'pgr_astrar()' & number_od >=100),aes(x=number_od, y=time, group = method)) +
+  labs(x="Number of Origin-Destination (OD)",
+       y="time (ms)",
+       title="PostgreSQL's queries performance") +
+  geom_line(aes(color=method)) +
+   geom_point(aes(color=method)) +
+  theme_minimal()
+```
+
+
+### Naive
+
+Centrality based on
+1. [Blog from Daniel I. Patterson](https://urbandatacyclist.com/2020/04/18/how-to-measure-centrality-among-bike-share-trips-using-pgrouting/)
+2. [Book by Matt Forrest "Listing 3.26: Final query",page 435](https://locatepress.com/book/spatial-sql)
 
 ```{sql}
 #| eval: false
----- Create 200 origin
-CREATE TABLE sampling_weight_200_origin  AS
-with porto_200_origin AS (
-        SELECT
-            * 
-        FROM 
-            od_2728_snapped_origin 
-        ORDER BY random() LIMIT 200)
-        SELECT * FROM  porto_200_origin;  
----- Create 200 destination
-CREATE TABLE sampling_weight_200_destination  AS
-with porto_200_destination AS (
-        SELECT
-            * 
-        FROM 
-            od_2728_snapped_origin 
-        ORDER BY random() LIMIT 200)
-        SELECT * FROM  porto_200_destination;  
----- Create index for origin
-CREATE INDEX idx_sampling_weight_200_origin_net_id ON sampling_weight_200_origin USING hash(net_id);
-CREATE INDEX idx_sampling_weight_200_origin_geom ON sampling_weight_200_origin USING gist(the_geom);
----- Create index for destination
-CREATE INDEX idx_sampling_weight_200_destination_net_id ON sampling_weight_200_destination USING hash(net_id);
-CREATE INDEX idx_sampling_weight_200_destination_geom ON sampling_weight_200_destination USING gist(the_geom);
----- Cluster
-CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
----- Vacuum clean
-VACUUM(full, ANALYZE) sampling_weight_200_origin;
-VACUUM(full, ANALYZE) sampling_weight_200_destination;
-VACUUM(full, ANALYZE) porto_alegre_net_largest;
---- Run query
 
+--- Run query
 EXPLAIN ANALYZE
  CREATE TABLE centrality_200_200_porto AS
  SELECT   b.ogc_fid,
@@ -98,13 +225,16 @@ EXPLAIN ANALYZE
 				      ARRAY(SELECT net_id AS start_id FROM porto_200_origin  ),
 				      ARRAY(SELECT net_id AS end_id FROM porto_200_destination ),
 				      directed := TRUE) j
-				      left JOIN porto_alegre_net_largest AS b
+				      LEFT JOIN porto_alegre_net_largest AS b
 				      ON j.edge = b.ogc_fid
 				      GROUP BY  b.ogc_fid, b.the_geom
 				      ORDER BY centrality DESC;  
 ```
 
-## Method bounding box
+### Method bounding box
+
+Code based on:
+1. [Stackoverflow from "simpleuser001" ](https://gis.stackexchange.com/questions/69722/why-is-any-pgr-routing-function-taking-forever-based-on-osm-data-in-an-pgrouti/69825#69825)
 
 ```{sql}
 #| eval: false
@@ -144,43 +274,14 @@ FROM
 
 ```
 
-## Method array_agg()
+### Method array_agg()
+
+Code based on:
+1. [Stackoverflow from "Timothy Dalton"](https://gis.stackexchange.com/questions/432035/pgrouting-computation-time-code-efficiency)
 
 ```{sql}
 #| eval: false
 
----- create origin_destination
-CREATE TEMP TABLE vertices_lookup_10
-AS             
-WITH all_pairs AS (
-  SELECT f.net_id AS fid, f.the_geom AS fgeom,
-         t.net_id AS tid, t.the_geom AS tgeom
-    FROM random_10_origin AS f,
-         random_10_destination AS t
-),
-vertices AS (
-  SELECT fid, tid,
-     (SELECT id
-        FROM porto_alegre_net_largest_vertices_pgr AS way
-       ORDER BY way.the_geom <-> fgeom
-       LIMIT 1) AS fv,
-     (SELECT id
-        FROM porto_alegre_net_largest_vertices_pgr AS way
-       ORDER BY way.the_geom <-> tgeom
-       LIMIT 1) AS tv
-  FROM all_pairs
-)
-SELECT * FROM vertices;
----- Number of OD
-SELECT count(*) FROM vertices_lookup_10;
----- Create index
-CREATE INDEX idx_vertices_lookup_10_fid ON vertices_lookup_10 USING hash(fid);
-CREATE INDEX idx_vertices_lookup_10_tid ON vertices_lookup_10 USING hash(tid);
-CREATE INDEX idx_vertices_lookup_10_fv ON vertices_lookup_10 USING hash(fv);
-CREATE INDEX idx_vertices_lookup_10_tv ON vertices_lookup_10 USING hash(tv);
----- Vacuum and clean
-VACUUM(full, ANALYZE) vertices_lookup_10;
-VACUUM(full, ANALYZE) porto_alegre_net_largest;
 ---- Run query using array_agg()
 EXPLAIN ANALYZE
 CREATE TABLE porto_100_dijkstra_agg AS
@@ -210,35 +311,25 @@ select max(centrality) FROM porto_100_dijkstra_agg ;
 select count(*) FROM porto_100_dijkstra_agg ;
 ```
 
-## pgr_astrar()
+## Algorithm
+
+### pgr_dijkstra
+
+```{r}
+ggplot(df,aes(x=number_od, y=time, group = algorithm)) +
+  labs(x="Number of Origin-Destination (OD)",
+       y="time (ms)",
+       title="PostgreSQL's queries performance") +
+  geom_line(aes(color=algorithm)) +
+   geom_point(aes(color=algorithm)) +
+  theme_minimal()
+```
+
+### pgr_astrar()
 
 ```{sql}
 #| eval: false
 
-SELECT * FROM random_10_origin ro ;
- 
-CREATE TABLE porto_alegre_net_largest_astar AS		    
-WITH porto_alegre_net_astart AS (
-SELECT 
-*,
-st_startpoint(the_geom) AS start_pt,
-st_endpoint(the_geom) AS end_pt
-FROM porto_alegre_net_largest AS net)
-SELECT *,
-	st_x(start_pt) AS x1,
-	st_y(start_pt) AS y1,
-	st_x(end_pt) AS x2,
-	st_y(end_pt) AS y2
-FROM porto_alegre_net_astart;
----- adding spatial index
-CREATE INDEX idx_porto_alegre_net_largest_astar_net_the_geom ON porto_alegre_net_largest_astar  USING gist(the_geom);
-CREATE INDEX idx_porto_alegre_net_largest_astar_net_start ON porto_alegre_net_largest_astar  USING gist(start_pt);
-CREATE INDEX idx_porto_alegre_net_largest_astar_net_end ON porto_alegre_net_largest_astar USING gist(end_pt);
-CREATE INDEX idx_porto_alegre_net_largest_astar_net_x1 ON porto_alegre_net_largest_astar  USING btree(x1);
-CREATE INDEX idx_porto_alegre_net_largest_astar_net_y1 ON porto_alegre_net_largest_astar USING btree(y1);
-CREATE INDEX idx_porto_alegre_net_largest_astar_net_x2 ON porto_alegre_net_largest_astar USING btree(x2);
-CREATE INDEX idx_porto_alegre_net_largest_astar_net_y2 ON porto_alegre_net_largest_astar USING btree(y2);                      
------ RUnning the query
 EXPLAIN ANALYZE
 CREATE TABLE centrality_10_10_porto_astrar AS
 SELECT  
@@ -270,8 +361,49 @@ SELECT max(centrality) FROM centrality_10_10_porto_astrar ;
 SELECT  count(*) FROM centrality_10_10_porto_astrar;
 ```
 
+### pgr_bdijkstra
+```{sql}
+#| eval: false
+#| connection: eisenberg_connection
+
+```
 
 
+### pgr_bdastar()
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+
+EXPLAIN ANALYZE
+CREATE TABLE centrality_100_100_porto_bdastrar AS 
+SELECT    b.ogc_fid,
+          b.the_geom,
+          count(the_geom) as centrality
+FROM 
+  pgr_bdAstar(
+      'SELECT
+          ogc_fid AS id,
+          fromid AS source,
+          toid AS target,
+          weight AS cost,
+          x1,
+          y1,
+          x2,
+          y2  
+  FROM
+    porto_alegre_net_largest_astar',
+    ARRAY(SELECT net_id FROM  random_100_origin),
+    ARRAY(SELECT net_id FROM  random_100_destination),
+    directed:=TRUE,
+    heuristic:=2) j
+    LEFT JOIN 
+      porto_alegre_net_largest_astar AS b
+      ON j.edge = b.ogc_fid
+      GROUP BY  b.ogc_fid, b.the_geom
+      ORDER BY centrality DESC;  
+```
+
+### Other code 
 ```{sql}
 #| eval: false
 #| connection: eisenberg_connection

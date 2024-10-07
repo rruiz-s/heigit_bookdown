@@ -1,0 +1,11 @@
+stage,file,description,section,loaded_temp,url,
+common,porto_alegre_net_largest,network,naive,y,<a href=\”https://drive.google.com/file/d/1nRCenmBSpzRQzSixjWQqIBeqeLpR4LdO/view?usp=sharing”>download</a>,
+common,porto_200_origin,od,naive,n,n,
+common,porto_200_destination,od,naive,n,n,
+astrar,porto_alegre_net_pre_component_one_star,od,bbox,y,<a href=\”https://drive.google.com/file/d/1nRCenmBSpzRQzSixjWQqIBeqeLpR4LdO/view?usp=sharing ”>download</a>,
+astrar,weight_sampling_200_origin,od,bbox,y,<a href=\”https://drive.google.com/file/d/1dBB_VXPapG8AVMjpimb8ZxxltL_fF4it/view?usp=sharing”>download</a>,
+astrar,weight_sampling_200_destination,od,bbox,y,<a href=\”https://drive.google.com/file/d/1-Hdt9_cgGuyFcqcV8kcQlNOBuQPzPPTr/view?usp=sharing”>download</a>,
+array,random_10_origin,od,array,y,<a href=\”https://drive.google.com/file/d/1-Hdt9_cgGuyFcqcV8kcQlNOBuQPzPPTr/view?usp=sharing”>download</a>,
+array,random_10_destination,od,array,y,<a href=\”https://drive.google.com/file/d/1-Hdt9_cgGuyFcqcV8kcQlNOBuQPzPPTr/view?usp=sharing”>download</a>,
+array,porto_alegre_net_largest_vertices_pgr,network,array,y,<a href=\”https://drive.google.com/file/d/1-Hdt9_cgGuyFcqcV8kcQlNOBuQPzPPTr/view?usp=sharing>download</a>,
+pgr_astrar,porto_alegre_net_astart,network,array,y,n,n
