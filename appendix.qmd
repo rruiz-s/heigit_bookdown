@@ -19,6 +19,8 @@ read_csv("data_table.csv") |> dplyr::select(c("file","section","url")) |>
 
 ### Indirect: Build from queries
 
+meter tambien el od_2722 que sin eso no puedes construir
+
 **Origin-Destination matrix**
 
 ```{sql}
@@ -404,6 +406,7 @@ FROM
 ```
 
 ### Other code 
+
 ```{sql}
 #| eval: false
 #| connection: eisenberg_connection

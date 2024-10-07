@@ -83,6 +83,163 @@ COPY porto_buildings TO
 
 ```
 
+### Alternative route
+
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+
+
+CREATE TABLE second_path_net AS
+WITH first_path AS (
+SELECT * FROM pgr_dijkstra(
+			'SELECT id,
+					 source,
+					 target, 
+					 cost 
+			FROM porto_alegre_net_pre_component_one',
+			7249, 7268,
+			true))
+SELECT 
+	* 
+FROM 
+	porto_alegre_net_pre_component_one
+WHERE
+	porto_alegre_net_pre_component_one.id NOT IN (select edge from first_path);
+
+SELECT * FROM pgr_dijkstra(
+			'SELECT id,
+					 source,
+					 target, 
+					 cost 
+			FROM second_path_net',
+			7249, 7268,
+			true)
+-----2
+
+
+CREATE TABLE pkt_2000 AS
+WITH hospital AS (SELECT 
+	h.ds_cnes,
+	net.id,
+	h.geom
+FROM hospital_rs_geoportal as h
+LEFT JOIN LATERAL
+	(SELECT 
+		id,
+		the_geom
+	 FROM
+	 porto_alegre_net_pre_component_one_vertices_pgr as net
+	 ORDER BY h.geom <-> net.the_geom
+	 LIMIT 1) AS net ON TRUE
+WHERE 
+	h.ds_cnes = 'IRMANDADE DA SANTA CASA DE MISERICORDIA DE PORTO ALEGRE'),
+origin AS(SELECT * FROM porto_alegre_net_pre_component_one_vertices_pgr 
+WHERE  id = 7268)
+SELECT j.path_id, j.node, j.edge, b.cost, b.the_geom FROM pgr_KSP(
+						'SELECT id,
+					        source,
+							target,
+							cost 
+						FROM porto_alegre_net_pre_component_one',
+						(SELECT id FROM hospital),
+						(SELECT id FROM origin),
+						2000) as j
+						left JOIN porto_alegre_net_pre_component_one AS b
+				  ON j.edge = b.id;
+
+CREATE TABLE road_without_first AS 
+SELECT 
+	* 
+FROM 
+	porto_alegre_net_pre_component_one  
+WHERE 
+	id NOT IN (SELECT edge FROM pkt_2000 WHERE path_id = 1);
+	
+	-----3
+	WITH paths AS (
+  SELECT 
+    path_id,
+    edge,
+    agg_cost,
+    SUM(agg_cost) OVER (PARTITION BY path_id ORDER BY seq ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum_sum,
+    SUM(agg_cost) OVER (PARTITION BY path_id) AS total_cost
+  FROM 
+    your_table
+),
+filtered_paths AS (
+  SELECT 
+    path_id,
+    edge,
+    agg_cost,
+    cum_sum,
+    total_cost
+  FROM 
+    paths
+  WHERE 
+    cum_sum > 0.25 * total_cost -- remove the first 25%
+    AND cum_sum < 0.75 * total_cost -- remove the last 25%
+)
+SELECT 
+  path_id, 
+  edge, 
+  agg_cost 
+FROM 
+  filtered_paths;
+  
+  ----5
+  WITH hospital AS (SELECT 
+	h.ds_cnes,
+	net.id,
+	h.geom
+FROM hospital_rs_geoportal as h
+LEFT JOIN LATERAL
+	(SELECT 
+		id,
+		the_geom
+	 FROM
+	 porto_alegre_net_pre_component_one_vertices_pgr as net
+	 ORDER BY h.geom <-> net.the_geom
+	 LIMIT 1) AS net ON TRUE
+WHERE 
+	h.ds_cnes = 'IRMANDADE DA SANTA CASA DE MISERICORDIA DE PORTO ALEGRE'),
+origin AS(SELECT
+				* 
+		  FROM 
+		  		porto_alegre_net_pre_component_one_vertices_pgr 
+WHERE  id = 7268),
+table_ksp AS (
+SELECT j.seq, j.path_id, j.path_seq, j.node, j.edge, j.agg_cost,j.cost,
+	b.the_geom, b.target, b.source, b.id FROM pgr_KSP(
+						'SELECT id,
+					        source,
+							target,
+							cost 
+						FROM porto_alegre_net_pre_component_one',
+						(SELECT id FROM hospital),
+						(SELECT
+							id 
+						FROM 
+							origin,
+							extract_ksp_segments
+						WHERE
+							origin.id NOT IN (
+								SELECT 
+									id 
+								FROM 
+									extract_ksp_segments
+								WHERE
+									path_id = 1)),
+						3) as j
+						left JOIN porto_alegre_net_pre_component_one AS b
+				  ON j.edge = b.id)
+SELECT  * FROM table_ksp;
+
+
+
+
+```
+
 ## Visualization
 
 ### Data 
