@@ -22,6 +22,8 @@ eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
 ## Import data
 centrality_weighted_100_bidirect_cleaned <- st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
 centrality_post <- st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned_post")
+centrality_post_local <- st_read(eisenberg_connection, query = "SELECT * FROM heigit.centrality_weighted_100_bidirect_cleaned_post")
+centrality_pre_local <- st_read(eisenberg_connection, query ="SELECT * FROM heigit.centrality_weighted_100_bidirect_cleaned")
 centrality_pre <-  st_read(eisenberg_connection, "centrality_weighted_100_bidirect_cleaned")
 flooding <- sf::st_read("~/heigit_bookdown/data/flooding_porto.geojson") 
 nuts_porto <-st_read(eisenberg_connection, "nuts_porto")
@@ -488,8 +490,6 @@ df_centrality_bind <- df_centrality_bind |>
     centrality == 0 ~ "[0]",
     TRUE ~ NA_character_  
   ))
-
-df_centrality_pre
 
 library(metan)
 library(ggsankey)

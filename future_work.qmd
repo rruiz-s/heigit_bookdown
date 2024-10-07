@@ -61,3 +61,229 @@ COPY porto_buildings TO 'porto_buildings.gpkg' WITH (FORMAT GDAL, DRIVER 'GPKG')
 
 
 ```
+
+## Visualization
+
+### Data 
+
+```{sql}
+#| connection = eisenberg_connection
+#| eval: false
+
+CREATE TABLE centrality_both_sankey  AS
+WITH centrality_both_sankey AS (
+SELECT  centrality_pre.bidirectid,
+        centrality_pre.centrality AS centrality_pre,
+        centrality_post.centrality AS centrality_post,
+        centrality_pre.the_geom AS pre_geom,
+        centrality_post.the_geom AS post_geom
+FROM centrality_weighted_100_bidirect_cleaned AS centrality_pre
+FULL OUTER JOIN centrality_weighted_100_bidirect_cleaned_post AS centrality_post
+  ON centrality_pre.bidirectid = centrality_post.bidirectid)
+SELECT 
+    bidirectid,
+    centrality_pre,
+    centrality_post,
+    COALESCE(ST_Length(pre_geom::geography)/100, ST_Length(post_geom::geography)/1000) AS geom_length
+FROM 
+    centrality_both_sankey;
+
+```
+
+### plot
+
+```{r}
+#| eval: false
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(ggsankey)
+
+### Flow Chart
+centrality_both_sankey <- DBI::dbReadTable(eisenberg_connection, "centrality_both_sankey")
+
+df_centrality_both_sankey <- centrality_both_sankey |> 
+  mutate(pre_scenario=
+           as.factor(case_when(
+             centrality_pre == 0 ~ "[0]",
+             centrality_pre > 0 & centrality_pre <= 146 ~ "[1-146]",
+             centrality_pre >= 146 & centrality_pre <=345 ~ "[146-345]",
+             centrality_pre >= 345 & centrality_pre <= 633  ~ "[345-633]",
+             centrality_pre >= 633 ~ "[633-1644]",
+             TRUE ~ "[0]")),
+         post_scenario=
+           as.factor(case_when(
+             centrality_post == 0 ~ "[0]",
+             centrality_post > 0 & centrality_post <= 146 ~ "[1-146]",
+             centrality_post >= 146 & centrality_post <=345 ~ "[146-345]",
+             centrality_post >= 345 & centrality_post <= 633  ~ "[345-633]",
+             centrality_post >= 633 ~ "[633-1644]",
+             TRUE ~ "[0]"))) 
+
+# HeiGIt --- Create a long format dataset for ggsankey
+df_centrality_both_sankey_long <- df_centrality_both_sankey |> 
+  mutate(
+    pre_scenario = as.character(pre_scenario),
+    post_scenario = as.character(post_scenario)) |> 
+  ggsankey::make_long(5:6) 
+
+# Create an initial Sankey diagram (not used in final plot, but used to extract data)
+mycolour <- c("#edf8fb","#b3cde3","#8c96c6","#8856a7","#810f7c")
+names(mycolour) <- c(unique(df_centrality_both_sankey_long$node)[3],
+                     unique(df_centrality_both_sankey_long$node)[1],
+                     unique(df_centrality_both_sankey_long$node)[2],
+                     unique(df_centrality_both_sankey_long$node)[4],
+                     unique(df_centrality_both_sankey_long$node)[5])
+auxiliar_data <-df_centrality_both_sankey_long |> group_by(node, x) |> count()
+df_centrality_both_sankey_long$node <- factor(df_centrality_both_sankey_long$node, levels=c("[0]",
+                                                                                            "[1-146]",
+                                                                                            "[146-345]",
+                                                                                            "[345-633]",
+                                                                                            "[633-1644]")) 
+p <- ggplot(df_centrality_both_sankey_long, aes(x = x,
+                                                next_x = next_x,
+                                                node = node,
+                                                next_node = next_node,
+                                                fill = factor(node),
+                                                label = node)) +
+  geom_sankey(flow.alpha = 0.6) +
+  geom_sankey_text() +
+  scale_fill_manual(values = mycolour) + 
+  geom_sankey_label( fill="white", alpha=.7) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.background = element_rect(fill = "grey99", color = NA)
+  )
+
+# Extract flow, node, and label data from the Sankey diagram
+moves_flows <- layer_data(p, 1) %>% 
+  mutate(height = flow_end_ymax - flow_end_ymin)
+
+moves_nodes <- layer_data(p, 2)
+
+moves_labels <- layer_data(p, 3)
+
+f1 <- "Graphik"
+f1b <- "Graphik Compact"
+f2 <- "Publico Headline"
+
+# Apply factor levels to ensure matching with mycolour
+moves_nodes$label <- factor(moves_nodes$label, levels = names(mycolour))
+moves_flows$label <- factor(moves_flows$label, levels = names(mycolour))
+
+p1 <- ggplot() +
+  # Add flow polygons, highlighting the most common moves and using the correct fill mapping
+  geom_polygon(data = moves_flows, aes(x, y, group = group, fill = label)) +
+  # Add node rectangles with color based on the label
+  geom_rect(data = moves_nodes, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = "white"), fill="white") +
+  # Manually scale the fill using the mycolour palette
+  scale_fill_manual(values = mycolour) +
+  # Add labels for the most common moves
+  geom_text(data = moves_labels,
+            aes(x, y, label = label),
+            family = f1b,
+            color = "black",
+            size = 6) +
+  labs(
+    title = "Changes on Connectivity",
+    subtitle = "Porto Alegre Settlement",
+    caption = "Source: OpenStreetMap · Graphic: Ricardo Ruiz Sánchez inspired by Georgios Karamanis"
+  ) +
+  theme_void(base_family = f1) +
+  theme(
+    legend.position = "none",
+    plot.background = element_rect(fill = "white", color = NA),
+    plot.margin = margin(10, 10, 10, 10),
+    plot.title = element_text(size = 30, face = "bold", family = f2),
+    plot.subtitle = element_text(size = 15, lineheight = 1, color = "#676162"),
+    plot.caption = element_text(hjust = 0, size = 12, "#676162")
+  )
+
+ggsave("plot_flow_chart.jpg", plot= p1, dpi= 300, width= 10, height= 15)
+
+## Length roads
+### pre-length
+df_length_pre <- centrality_both_sankey |> select(bidirectid, centrality_pre, geom_length) |>
+  rename(centrality = centrality_pre) |> 
+  mutate(
+  category_centrality=
+    as.factor(case_when(
+      centrality == 0 ~ "[0]",
+      centrality > 0 & centrality <= 146 ~ "[1-146]",
+      centrality >= 146 & centrality <=345 ~ "[146-345]",
+      centrality >= 345 & centrality <= 633  ~ "[345-633]",
+      centrality >= 633 ~ "[633-1644]",
+      TRUE ~ "[0]"))) |> 
+  dplyr::select(c(geom_length, category_centrality)) |> 
+  group_by(category_centrality) |>
+  summarise(total_lenth=sum(geom_length))
+df_length_pre$event <- "Road length (%)"
+df_length_pre$pct <- as.numeric(round(df_length_pre$total_lenth/(sum(df_length_pre$total_lenth)),4))
+
+## pre-length-plot
+ggplot(df_length_pre, aes(x = event, y = pct, fill = category_centrality)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = mycolour) +
+  #theme_minimal() +
+  ggthemes::theme_clean() +
+  labs(x="", y="") +
+  theme(
+    legend.position = "none",
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 7),
+    legend.background = element_blank(),
+    plot.background = element_blank(),
+    plot.caption = element_text(face = "italic",
+                                size = 8,
+                                color = "grey30"
+    )
+  ) +
+  guides (
+    fill = guide_legend(nrow =2, byrow = TRUE)
+  ) 
+
+## Centralities values
+df_barplots_sankey <- df_centrality_both_sankey |>
+  pivot_longer(cols=c("post_scenario","pre_scenario"),
+               names_to ="event",
+               values_to = "quartile")
+centrality_both_longer <- centrality_both |> pivot_longer(cols=c(pre_scenario, post_scenario),
+                                names_to = "quartile",
+                                values_to = "category") 
+df_barplots_sankey <- centrality_both_longer |> 
+  dplyr::select(c(centrality, quartile, category)) |>
+  group_by(quartile, category) |> summarise(centrality=sum(centrality)) |>
+  mutate(total_perc = centrality/sum(centrality))
+
+ggplot(df_barplots_sankey, aes(x = quartile, y = total_perc, fill = category)) +
+  geom_col() +
+  scale_x_discrete(labels=c("centrality_post" = "Post-flooding", "centrality_pre" = "Pre-flooding")) +
+  coord_flip() +
+  scale_fill_manual(values = mycolour) +
+  labs(
+    x = "Event",
+    y = "Centrality (%)",
+    title = "Share of centrality per range in the two scenarios"
+  ) +
+  #theme_minimal() +
+  ggthemes::theme_clean() +
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(size = 7),
+    legend.title = element_text(size = 7),
+    legend.background = element_blank(),
+    plot.background = element_blank(),
+    plot.caption = element_text(face = "italic",
+                                size = 8,
+                                color = "grey30"
+    )
+  ) +
+  guides (
+    fill = guide_legend(nrow = 1, byrow = TRUE)
+  ) 
+
+```
+
