@@ -11,7 +11,7 @@ Poner aqui el problema
 #| warning: false
 
 library(DT)
-library(tidyverse)
+library(tidyverse)gi
 data_table <- read_csv("data_table.csv") |> dplyr::select(c("file","section","url")) 
 data_table$url <- paste0('<a href="', data_table$url,'">','Download: ', data_table$file, '</a>')
 data_table |>
