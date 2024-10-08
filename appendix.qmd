@@ -12,8 +12,10 @@ Poner aqui el problema
 
 library(DT)
 library(tidyverse)
-read_csv("data_table.csv") |> dplyr::select(c("file","section","url")) |>
-  datatable(escape= FALSE)
+data_table <- read_csv("data_table.csv") |> dplyr::select(c("file","section","url")) 
+data_table$url <- paste0('<a href="', data_table$url,'">','Download: ', data_table$file, '</a>')
+data_table |>
+  DT::datatable(escape= FALSE)
 ```
 
 
