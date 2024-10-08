@@ -166,11 +166,11 @@ VACUUM(full, ANALYZE) porto_alegre_net_largest;
 #| warning: false
 #| message: false
 #| echo: false
+#| include: false
 
 lapply(c("readODS","tidyverse","ggplot2","DT"), require, character.only =TRUE)
 performance <- readODS::read_ods("metrics.ods")
 df <- performance |> dplyr::select(c("number_od","method","algorithm","time","max_centrality","count_rows","query","analyze")) |> filter(!is.na(time) & method %in% c('naive','array_agg','st_bbox'))
-
 DT::datatable(subset(df, select=c("number_od","algorithm","time","query","analyze")), 
               class='compact', rownames=FALSE, escape=FALSE, caption='Data description',
               extensions=c("Buttons",'RowGroup'),
@@ -209,6 +209,7 @@ ggplot(filter(df, method %in% c('st_bbox','naive') & algorithm == 'pgr_astrar()'
 ### Naive
 
 Centrality based on
+
 1. [Blog from Daniel I. Patterson](https://urbandatacyclist.com/2020/04/18/how-to-measure-centrality-among-bike-share-trips-using-pgrouting/)
 2. [Book by Matt Forrest "Listing 3.26: Final query",page 435](https://locatepress.com/book/spatial-sql)
 
@@ -238,6 +239,7 @@ EXPLAIN ANALYZE
 ### Method bounding box
 
 Code based on:
+
 1. [Stackoverflow from "simpleuser001" ](https://gis.stackexchange.com/questions/69722/why-is-any-pgr-routing-function-taking-forever-based-on-osm-data-in-an-pgrouti/69825#69825)
 
 ```{sql}
@@ -281,6 +283,7 @@ FROM
 ### Method array_agg()
 
 Code based on:
+
 1. [Stackoverflow from "Timothy Dalton"](https://gis.stackexchange.com/questions/432035/pgrouting-computation-time-code-efficiency)
 
 ```{sql}
