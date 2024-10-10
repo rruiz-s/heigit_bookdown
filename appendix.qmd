@@ -10,8 +10,9 @@ Poner aqui el problema
 #| message: false
 #| warning: false
 
+options(scipen=999)
 library(DT)
-library(tidyverse)gi
+library(tidyverse)
 data_table <- read_csv("data_table.csv") |> dplyr::select(c("file","section","url")) 
 data_table$url <- paste0('<a href="', data_table$url,'">','Download: ', data_table$file, '</a>')
 data_table |>
@@ -95,6 +96,17 @@ CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
 VACUUM(full, ANALYZE) sampling_weight_200_origin;
 VACUUM(full, ANALYZE) sampling_weight_200_destination;
 VACUUM(full, ANALYZE) porto_alegre_net_largest;
+```
+
+```{sql}
+#| connection: eisenberg_connection
+#| eval: false
+#| code-summary: "Applying spatial index in the network"
+CREATE INDEX idx_porto_alegre_net_largest_geom ON porto_alegre_net_largest  USING GIST(the_geom);
+CREATE INDEX idx_porto_alegre_net_largest_source ON porto_alegre_net_largest  USING btree(source);
+CREATE INDEX idx_porto_alegre_net_largest_target ON porto_alegre_net_largest  USING btree(target);
+CREATE INDEX idx_porto_alegre_net_largest_cost ON porto_alegre_net_largest  USING btree(cost);
+CREATE INDEX idx_porto_alegre_net_largest_bidirectid ON porto_alegre_net_largest  USING btree(bidirectid);
 ```
 
 ```{sql}
@@ -196,10 +208,13 @@ DT::datatable(subset(df, select=c("number_od","algorithm","time","query","analyz
 ## Method
 
 ```{r}
-ggplot(filter(df, method %in% c('st_bbox','naive') & algorithm == 'pgr_astrar()' & number_od >=100),aes(x=number_od, y=time, group = method)) +
+
+data_dijkstra_method <- read.csv("/home/ricardo/heigit_bookdown/metrics_method_dijkstra.csv",sep=",")
+ggplot(data_dijkstra_method, aes(x=number_od, y=time, group = method)) +
   labs(x="Number of Origin-Destination (OD)",
        y="time (ms)",
-       title="PostgreSQL's queries performance") +
+       title="Pgrouting pgr_dijkstra() performance",
+       subtitle="using naive, bbox, array_ag() methods") +
   geom_line(aes(color=method)) +
    geom_point(aes(color=method)) +
   theme_minimal()
@@ -322,11 +337,13 @@ select count(*) FROM porto_100_dijkstra_agg ;
 
 ### pgr_dijkstra
 
+
 ```{r}
-ggplot(df,aes(x=number_od, y=time, group = algorithm)) +
-  labs(x="Number of Origin-Destination (OD)",
+data_algorithms_naive <- read.csv("/home/ricardo/heigit_bookdown/metrics_algorithm_naive.csv", sep=",")
+ggplot(data_algorithms_naive,aes(x=number_od, y=time, group = algorithm)) +
+  labs(x="Naive method on dijkstra,bddijkstra, astar, bdastar",
        y="time (ms)",
-       title="PostgreSQL's queries performance") +
+       title="Pgrouting performance") +
   geom_line(aes(color=algorithm)) +
    geom_point(aes(color=algorithm)) +
   theme_minimal()

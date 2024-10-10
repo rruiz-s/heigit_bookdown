@@ -998,7 +998,7 @@ $BODY$ LANGUAGE plpgsql IMMUTABLE STRICT;
 CREATE TABLE regular_point_od AS (
 WITH multipoint_regular AS(
 select 
-    I_Grid_Point_Series(geom, 0.01,0.01, false) AS geom
+    I_Grid_Point_Series(geom, 0.037,0.037, false) AS geom
     from porto_alegre_bbox as geom),
 point_regular AS(
 SELECT 
@@ -1090,13 +1090,13 @@ WITH porto_100_destination AS (
         SELECT * FROM  porto_100_destination;  
 --- Indeces on origin
 CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(pt_id);
-CREATE INDEX weight_sampling_100_origin_idx_pt_id ON weight_sampling_100_origin USING btree(net_id);
+CREATE INDEX weight_sampling_100_origin_idx_net_id ON weight_sampling_100_origin USING btree(net_id);
 CREATE INDEX weight_sampling_100_origin_idx_the_geom ON weight_sampling_100_origin USING gist(the_geom);
 ----- A) Indexes, clustering and vacuum
 ---  Indexes on destination
-CREATE INDEX weight_sampling_1000_destination_idx_pt_id ON weight_sampling_1000_destination USING btree(pt_id);
-CREATE INDEX weight_sampling_1000_destination_idx_net_id ON weight_sampling_1000_destination USING btree(net_id);
-CREATE INDEX weight_sampling_1000_destination_idx_the_geom ON weight_sampling_1000_destination USING gist(the_geom);
+CREATE INDEX weight_sampling_100_destination_idx_pt_id ON weight_sampling_100_destination USING btree(pt_id);
+CREATE INDEX weight_sampling_100_destination_idx_net_id ON weight_sampling_100_destination USING btree(net_id);
+CREATE INDEX weight_sampling_100_destination_idx_the_geom ON weight_sampling_100_destination USING gist(the_geom);
 ---- Cluster
 CLUSTER porto_alegre_net_largest USING idx_porto_alegre_net_largest_geom;
 ---- Vacuum clean
