@@ -83,6 +83,7 @@ COPY porto_buildings TO
 
 ```
 
+
 ### Alternative route
 
 ```{sql}
@@ -236,6 +237,96 @@ SELECT j.seq, j.path_id, j.path_seq, j.node, j.edge, j.agg_cost,j.cost,
 SELECT  * FROM table_ksp;
 
 
+
+
+```
+
+This second one does work without creating two segments of networks. It just increased the costs dinamically. This is inspired by [post](https://gis-ops.com/pgrouting-customize-routing-pleasant-hiking/) and [post](https://gis.stackexchange.com/questions/432741/creating-two-costs-in-pgrouting)
+
+```{sql}
+#| eval: false
+
+---- Obtain the shortest path as usual
+CREATE TABLE first_path_dijkstra AS
+SELECT 
+		seq,
+		path_seq,
+		start_vid,
+		end_vid,
+		node,
+		edge,
+		net.the_geom 
+FROM  pgr_dijkstra('
+				SELECT 
+						id,
+						source,
+						target,
+						cost
+				FROM porto_alegre_net_largest',
+				9372,
+				1084) AS path
+	LEFT JOIN porto_alegre_net_pre_component_one AS net
+	ON path.edge = net.id;
+---- detected the shortest path and then increased cost two fold
+CREATE TABLE dijkstra_second_route AS
+WITH pgr_ksp_table AS (
+SELECT 
+	*
+FROM  pgr_ksp('
+				SELECT 
+						id,
+						source,
+						target,
+						cost
+				FROM porto_alegre_net_largest',
+				9372,
+				1084,
+				3,
+				true)), ----node 9372, network = source, target)
+second_route AS (
+			SELECT 
+			net.*,
+			CASE 
+				WHEN route.node = net.source THEN net.cost * 2
+				ELSE net.cost
+			END AS cost_updated
+			FROM 			
+				porto_alegre_net_largest AS net
+			LEFT JOIN 
+				pgr_ksp_table  AS route 
+			ON 	
+				route.edge= net.id)	
+		SELECT * FROM second_route;
+
+---- Create spatial index	
+CREATE INDEX idx_ ON dijkstra_second_route USING gist(the_geom);
+CREATE INDEX dijkstra_second_route_source_source ON dijkstra_second_route USING btree(source);
+CREATE INDEX dijkstra_second_route_source_target ON dijkstra_second_route USING btree(target);
+
+---- obtain the second shortest path, since the first-path has now higher 
+CREATE TABLE second_path_dikstra AS
+SELECT 
+			seq,
+			path_seq,
+			start_vid,
+			end_vid,
+			node,
+			edge,
+			net.the_geom 
+		FROM 
+			pgr_Dijkstra('
+					SELECT
+						id,
+						source,
+						target,
+						cost_updated AS cost
+					FROM
+						dijkstra_second_route',
+						9372,
+						1084)  AS path
+		LEFT JOIN
+				dijkstra_second_route AS net ON
+			path.edge = net.id
 
 
 ```

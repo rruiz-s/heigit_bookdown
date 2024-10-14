@@ -341,9 +341,10 @@ select count(*) FROM porto_100_dijkstra_agg ;
 ```{r}
 data_algorithms_naive <- read.csv("/home/ricardo/heigit_bookdown/metrics_algorithm_naive.csv", sep=",")
 ggplot(data_algorithms_naive,aes(x=number_od, y=time, group = algorithm)) +
-  labs(x="Naive method on dijkstra,bddijkstra, astar, bdastar",
+  labs(x="Number of Origin-Destination (OD)",
        y="time (ms)",
-       title="Pgrouting performance") +
+       title="Pgrouting performance",
+       subtitle="Naive method on dijkstra,bddijkstra, astar, bdastar") +
   geom_line(aes(color=algorithm)) +
    geom_point(aes(color=algorithm)) +
   theme_minimal()
