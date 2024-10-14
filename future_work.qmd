@@ -11,6 +11,29 @@ data.frame(
 )
 ```
 
+### Bairros
+
+```{sql}
+#| eval: false
+
+# import the data : shp2pgsql -D -I -s 4674 -W "LATIN1" '43SEE250GC_SIR.shp' barrios_brasil | psql -p 25432 -U docker -d gis -h localhost
+
+CREATE TABLE brasil_porto_barrios AS
+SELECT 
+	nm_bairro,
+	st_union(brasil_barrios_4326.geom_4326)
+FROM
+	brasil_barrios_4326,
+	ghs_aoi_porto_alegre
+WHERE 
+ brasil_barrios_4326.nm_bairro IS NOT NULL
+ AND
+ 	st_intersects(brasil_barrios_4326.geom_4326,
+ 				ghs_aoi_porto_alegre.geom)
+GROUP BY 
+	nm_bairro;
+```
+
 ## Perforamance
 
 ### Flood mask
