@@ -590,7 +590,411 @@ alternative_routes |> arrange(distance) |>
 
 ```
 
+## Porto Alegre
 
+```{sql}
+#| eval: false
+
+
+CREATE TABLE centroid_cbd_porto AS
+SELECT 
+	vertices.id,
+	vertices.the_geom
+FROM 
+	central_business_district  AS cbd
+LEFT JOIN LATERAL 
+	(SELECT
+		id,
+		the_geom
+	 FROM
+	 	porto_alegre_net_pre_vertices_pgr AS vertices
+	 	ORDER BY 
+	 		st_centroid(cbd.st_union) <-> vertices.the_geom
+	 		LIMIT 1) AS vertices ON TRUE	
+WHERE 
+	nm_bairro 
+LIKE
+	'Centro Histórico';
+
+
+CREATE TABLE first_path_porto_alegre_cbd AS
+SELECT 
+        seq,
+        path_seq,
+        start_vid,
+        end_vid,
+        node,
+        edge,
+        net.the_geom,
+        1 AS path
+FROM  pgr_dijkstra('
+                SELECT 
+                        id,
+                        source,
+                        target,
+                        cost
+                FROM porto_alegre_net_largest',
+                (SELECT id FROM centroid_cbd_porto),
+                ARRAY(SELECT id FROM hospital_rs_node_v2),
+                directed := TRUE) AS path
+    LEFT JOIN porto_alegre_net_largest AS net
+    ON path.edge = net.id;
+    
+   
+CREATE TABLE dijkstra_second_route_cbd_porto AS
+WITH pgr_doubled_dijkstra AS (
+SELECT 
+    *
+FROM  pgr_dijkstra('
+                SELECT 
+                        id,
+                        source,
+                        target,
+                        cost
+                FROM porto_alegre_net_largest',
+                 (SELECT id FROM centroid_cbd_porto),
+                ARRAY(SELECT id FROM hospital_rs_node_v2),
+                directed:=true)), 
+second_route AS (
+            SELECT 
+            net.*,
+            CASE 
+                WHEN route.node = net.source THEN net.cost * 20
+                ELSE net.cost
+            END AS cost_updated
+            FROM            
+                porto_alegre_net_largest AS net
+            LEFT JOIN 
+                pgr_doubled_dijkstra  AS route 
+            ON  
+                route.edge= net.id) 
+        SELECT * FROM second_route; 
+--- Create spatial index   
+CREATE INDEX idx_second_cdb_porto ON dijkstra_second_route_cbd_porto USING gist(the_geom);
+CREATE INDEX idx_second_cdb_porto_source ON dijkstra_second_route_cbd_porto USING btree(source);
+CREATE INDEX idx_second_cdb_porto_target ON dijkstra_second_route_cbd_porto USING btree(target);
+  
+---- obtain the second shortest path, since the first-path has now higher 
+DROP TABLE second_path_dikstra_cdb_porto;
+CREATE TABLE second_path_dikstra_cdb_porto AS
+SELECT 
+            seq,
+            path_seq,
+            start_vid,
+            end_vid,
+            node,
+            edge,
+            net.the_geom,
+            2 AS path
+        FROM 
+            pgr_Dijkstra('
+                    SELECT
+                        id,
+                        source,
+                        target,
+                        cost_updated AS cost
+                    FROM
+                        dijkstra_second_route_cbd_porto',
+                    (SELECT id FROM centroid_cbd_porto),
+                    ARRAY(SELECT id FROM hospital_rs_node_v2))  AS path
+        LEFT JOIN
+                dijkstra_second_route_cbd_porto AS net ON
+            path.edge = net.id;
+select * from second_path_dikstra_cdb_porto;
+           
+CREATE TABLE dijkstra_third_route_cdb_porto AS
+WITH pgr_doubled_dijkstra AS (
+SELECT 
+    *
+FROM  pgr_dijkstra('
+                SELECT 
+                        id,
+                        source,
+                        target,
+                        cost_updated AS cost
+                FROM dijkstra_second_route_cbd_porto',
+                (SELECT id FROM centroid_cbd_porto),
+                ARRAY(SELECT id FROM hospital_rs_node_v2),
+                directed:=true)), ----node 9372, network = source, target)
+second_route AS (
+            SELECT 
+            net.*,
+            CASE 
+                WHEN route.node = net.source THEN net.cost_updated * 20
+                ELSE net.cost_updated
+            END AS cost_updated_nd
+            FROM            
+                dijkstra_second_route_cbd_porto AS net
+            LEFT JOIN 
+                pgr_doubled_dijkstra  AS route 
+            ON  
+                route.edge= net.id) 
+        SELECT * FROM second_route;
+    ----
+       
+CREATE TABLE third_path_dikstra_cdb_porto AS
+SELECT 
+            seq,
+            path_seq,
+            start_vid,
+            end_vid,
+            node,
+            edge,
+            net.the_geom,
+            3 AS path
+        FROM 
+            pgr_Dijkstra('
+                    SELECT
+                        id,
+                        source,
+                        target,
+                        cost_updated_nd AS cost
+                    FROM
+                        dijkstra_third_route_cdb_porto',
+                    (SELECT id FROM centroid_cbd_porto),
+                    ARRAY(SELECT id FROM hospital_rs_node_v2))  AS path
+        LEFT JOIN
+                dijkstra_third_route_cdb_porto AS net ON
+            path.edge = net.id;
+            
+            select * from third_path_dikstra_cdb_porto;    
+
+CREATE TABLE three_alternative_paths_porto AS 
+SELECT * FROM first_path_porto_alegre_cbd
+UNION
+SELECT * FROM second_path_dikstra_cdb_porto
+UNION
+SELECT * FROM third_path_dikstra_cdb_porto
+
+
+CREATE TABLE paths_linestring_table_cdb_porto AS
+WITH paths_linestring AS (
+SELECT
+    start_vid,
+    end_vid,
+    path,
+    st_union(the_geom) AS line_geom
+FROM 
+    three_alternative_paths_porto
+GROUP BY path, start_vid, end_vid)
+SELECT 
+    paths_linestring.*,
+    hospitals.ds_cnes,
+    round(st_length(line_geom::geography)::numeric/1000,2) AS distance
+FROM 
+    paths_linestring
+JOIN hospitales AS hospitals
+ON hospitals.id = paths_linestring.end_vid
+
+
+SELECT * FROM paths_linestring_table_cdb_porto;
+
+
+```
+
+## Canoas
+
+```{sql}
+#| eval: false
+
+
+
+CREATE TABLE centroid_cbd_canoas AS
+SELECT 
+	vertices.id,
+	vertices.the_geom
+FROM 
+	central_business_district  AS cbd
+LEFT JOIN LATERAL 
+	(SELECT
+		id,
+		the_geom
+	 FROM
+	 	porto_alegre_net_pre_vertices_pgr AS vertices
+	 	ORDER BY 
+	 		st_centroid(cbd.st_union) <-> vertices.the_geom
+	 		LIMIT 1) AS vertices ON TRUE	
+WHERE 
+	nm_bairro 
+LIKE
+	'Centro';
+
+
+CREATE TABLE first_path_canoas_cbd AS
+SELECT 
+        seq,
+        path_seq,
+        start_vid,
+        end_vid,
+        node,
+        edge,
+        net.the_geom,
+        1 AS path
+FROM  pgr_dijkstra('
+                SELECT 
+                        id,
+                        source,
+                        target,
+                        cost
+                FROM porto_alegre_net_largest',
+                (SELECT id FROM centroid_cbd_canoas),
+                ARRAY(SELECT id FROM hospital_rs_node_v2),
+                directed := TRUE) AS path
+    LEFT JOIN porto_alegre_net_largest AS net
+    ON path.edge = net.id;
+    
+
+CREATE TABLE dijkstra_second_route_cbd_canoas AS
+WITH pgr_doubled_dijkstra AS (
+SELECT 
+    *
+FROM  pgr_dijkstra('
+                SELECT 
+                        id,
+                        source,
+                        target,
+                        cost
+                FROM porto_alegre_net_largest',
+                 (SELECT id FROM centroid_cbd_canoas),
+                ARRAY(SELECT id FROM hospital_rs_node_v2),
+                directed:=true)), 
+second_route AS (
+            SELECT 
+            net.*,
+            CASE 
+                WHEN route.node = net.source THEN net.cost * 20
+                ELSE net.cost
+            END AS cost_updated
+            FROM            
+                porto_alegre_net_largest AS net
+            LEFT JOIN 
+                pgr_doubled_dijkstra  AS route 
+            ON  
+                route.edge= net.id) 
+        SELECT * FROM second_route; 
+--- Create spatial index   
+CREATE INDEX idx_second_cdb_porto ON dijkstra_second_route_cbd_porto USING gist(the_geom);
+CREATE INDEX idx_second_cdb_porto_source ON dijkstra_second_route_cbd_porto USING btree(source);
+CREATE INDEX idx_second_cdb_porto_target ON dijkstra_second_route_cbd_porto USING btree(target);
+  
+---- obtain the second shortest path, since the first-path has now higher 
+
+CREATE TABLE second_path_dikstra_cdb_canoas AS
+SELECT 
+            seq,
+            path_seq,
+            start_vid,
+            end_vid,
+            node,
+            edge,
+            net.the_geom,
+            2 AS path
+        FROM 
+            pgr_Dijkstra('
+                    SELECT
+                        id,
+                        source,
+                        target,
+                        cost_updated AS cost
+                    FROM
+                        dijkstra_second_route_cbd_canoas',
+                    (SELECT id FROM centroid_cbd_canoas),
+                    ARRAY(SELECT id FROM hospital_rs_node_v2))  AS path
+        LEFT JOIN
+                dijkstra_second_route_cbd_canoas AS net ON
+            path.edge = net.id;
+select * from second_path_dikstra_cdb_canoas;
+           
+
+
+
+CREATE TABLE dijkstra_third_route_cdb_canoas AS
+WITH pgr_doubled_dijkstra AS (
+SELECT 
+    *
+FROM  pgr_dijkstra('
+                SELECT 
+                        id,
+                        source,
+                        target,
+                        cost_updated AS cost
+                FROM dijkstra_second_route_cbd_canoas',
+                (SELECT id FROM centroid_cbd_canoas),
+                ARRAY(SELECT id FROM hospital_rs_node_v2),
+                directed:=true)), ----node 9372, network = source, target)
+second_route AS (
+            SELECT 
+            net.*,
+            CASE 
+                WHEN route.node = net.source THEN net.cost_updated * 20
+                ELSE net.cost_updated
+            END AS cost_updated_nd
+            FROM            
+                dijkstra_second_route_cbd_canoas AS net
+            LEFT JOIN 
+                pgr_doubled_dijkstra  AS route 
+            ON  
+                route.edge= net.id) 
+        SELECT * FROM second_route;
+    ----
+       
+CREATE TABLE third_path_dikstra_cdb_canoas AS
+SELECT 
+            seq,
+            path_seq,
+            start_vid,
+            end_vid,
+            node,
+            edge,
+            net.the_geom,
+            3 AS path
+        FROM 
+            pgr_Dijkstra('
+                    SELECT
+                        id,
+                        source,
+                        target,
+                        cost_updated_nd AS cost
+                    FROM
+                        dijkstra_third_route_cdb_canoas',
+                    (SELECT id FROM centroid_cbd_canoas),
+                    ARRAY(SELECT id FROM hospital_rs_node_v2))  AS path
+        LEFT JOIN
+                dijkstra_third_route_cdb_canoas AS net ON
+            path.edge = net.id;
+            
+            select * from third_path_dikstra_cdb_canoas;    
+
+CREATE TABLE three_alternative_paths_canoas AS 
+SELECT * FROM first_path_canoas_cbd
+UNION
+SELECT * FROM second_path_dikstra_cdb_canoas
+UNION
+SELECT * FROM third_path_dikstra_cdb_canoas
+
+
+CREATE TABLE paths_linestring_table_cdb_canoas AS
+WITH paths_linestring AS (
+SELECT
+    start_vid,
+    end_vid,
+    path,
+    st_union(the_geom) AS line_geom
+FROM 
+    three_alternative_paths_canoas
+GROUP BY path, start_vid, end_vid)
+SELECT 
+    paths_linestring.*,
+    hospitals.ds_cnes,
+    round(st_length(line_geom::geography)::numeric/1000,2) AS distance
+FROM 
+    paths_linestring
+JOIN hospitales AS hospitals
+ON hospitals.id = paths_linestring.end_vid
+
+
+
+```
 ## Visualization
 
 ### Data 
