@@ -996,6 +996,54 @@ ON hospitals.id = paths_linestring.end_vid
 
 ```
 ## Visualization
+## Tabla
+
+```{r}
+#| eval: false
+
+#### alternative routes before
+alternative_routes <- st_read(eisenberg_connection,                         "paths_linestring_table")
+alternative_routes$momment <- "pre"
+#### alternative routes after
+alternative_routes_after <- st_read(eisenberg_connection,       "paths_linestring_table_cdb_porto_after")
+alternative_routes_after$momment <- "post"
+
+##### binding the two
+alternative_routes_both <- alternative_routes |> 
+  bind_rows(alternative_routes_after)
+#### Creating table for before flooding
+table_before |> arrange(ds_cnes)  |>  write_csv("table_before_sd.csv")
+table_before <- alternative_routes |> 
+  rename(distance_before = distance) |> 
+  arrange(distance_before) |> 
+  st_drop_geometry() |>
+  select(c(ds_cnes, path, distance_before)) |> 
+  mutate(ds_cnes = as_factor(str_to_title(ds_cnes))) |>
+  group_by(ds_cnes) |> 
+  mutate(sd_distance_before = sd(distance_before))
+##### Creating table for after flooding
+table_after <- alternative_routes_after |> arrange(distance) |> 
+  st_drop_geometry() |>
+  rename(distance_after = distance) |> 
+  select(c(ds_cnes, path, distance_after)) |> 
+  mutate(ds_cnes = as_factor(str_to_title(ds_cnes))) |>
+  group_by(ds_cnes) |> 
+  mutate(sd_distance_after = sd(distance_after))
+table_after |> arrange(ds_cnes)  |> write_csv("table_after_sd.csv")
+
+#### Creating sd table
+tabla_alternative_roads_sd <- alternative_routes_both |>
+  sf::st_drop_geometry() |> 
+  mutate(ds_cnes = as_factor(str_to_title(ds_cnes)))  |> 
+  pivot_wider(names_from = momment,
+              values_from=distance,
+              names_glue = "{momment}_distance") |> 
+  group_by(end_vid,ds_cnes) |>
+  summarise(sd_distance_pre = sd(pre_distance, na.rm=TRUE),
+            sd_distance_post = sd(post_distance, na.rm =TRUE)) |>
+  mutate(change_sd = (sd_distance_post-sd_distance_pre)/sd_distance_pre)
+
+```
 
 ### Data 
 
