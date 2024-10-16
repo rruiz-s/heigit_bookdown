@@ -1182,7 +1182,7 @@ ON hospitals.id = paths_linestring.end_vid
 
 ```
 ## Visualization
-## Tabla
+## Tabla A: alternative
 
 ```{r}
 #| eval: false
@@ -1230,6 +1230,97 @@ tabla_alternative_roads_sd <- alternative_routes_both |>
   mutate(change_sd = (sd_distance_post-sd_distance_pre)/sd_distance_pre)
 
 ```
+
+## Tabla B: centrality
+
+```{sql}
+#| eval: false
+
+---- bairros
+
+DROP TABLE bairro_porto_cleaned ;
+create table bairro_porto_cleaned AS
+select distinct on (cd_geocodb)
+		cd_geocodb,
+		tipo,
+		nm_bairro,
+		st_union(st_transform(geom,4326)) AS the_geom
+from 
+	barrios_brasil 
+where nm_bairro IS NOT NULL
+GROUP BY
+	cd_geocodb, tipo, nm_bairro;
+
+
+---- subdistricts cd_geocods 
+create table subdistricts_porto_cleaned AS
+select distinct on (cd_geocods)
+		cd_geocods,
+		tipo,
+		nm_bairro,
+		nm_subdist,
+		st_union(st_transform(geom,4326)) AS the_geom
+from 
+	barrios_brasil 
+GROUP BY
+	cd_geocods, tipo, nm_bairro,nm_subdist;
+---- districts
+create table districts_porto_cleaned AS
+select distinct on (cd_geocodd)
+		cd_geocodd,
+		tipo,
+		nm_distrit,
+		st_union(st_transform(geom,4326)) AS the_geom
+from 
+	barrios_brasil 
+GROUP BY
+	cd_geocodd, tipo, nm_distrit;
+
+---
+
+SELECT * FROM bairro_porto_cleaned;
+SELECT * FROM barrios_brasil;
+SELECT * FROM districts_porto_cleaned;
+----- Municipalities
+create table municipalities_porto_cleaned AS
+select distinct on (cd_geocodm)
+		cd_geocodm,
+		tipo,
+		nm_municip,
+		st_union(st_transform(geom,4326)) AS the_geom
+from 
+	barrios_brasil 
+GROUP BY
+	cd_geocodm, tipo, nm_municip;
+----- centrality para barrios
+CREATE TABLE table_barrios_mean AS
+WITH centrality_barrios AS (
+SELECT 
+	cd_geocodb,
+	bairros.nm_bairro,
+	bairros.tipo,
+	centrality.*,
+	bairros.the_geom AS polygon
+FROM 
+	centrality_weighted_100_bidirect_cleaned AS centrality	
+LEFT JOIN bairro_porto_cleaned AS bairros
+ON st_intersects(centrality.the_geom,
+					bairros.the_geom))
+SELECT 
+	cd_geocodb AS bairro_id,
+	nm_bairro AS bairro_name,
+	tipo AS bairro_type,
+	sum(st_length(the_geom)) AS total_length,
+	avg(centrality) AS mean_centrality,
+	percentile_disc(0.5) WITHIN GROUP (ORDER BY centrality) AS median,
+	polygon
+FROM centrality_barrios	
+WHERE nm_bairro IS NOT NULL
+GROUP BY cd_geocodb, nm_bairro, tipo, polygon
+
+
+```
+
 
 ### Data 
 
