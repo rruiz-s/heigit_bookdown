@@ -108,7 +108,7 @@ COPY porto_buildings TO
 ```
 
 
-### Alternative route
+## Alternative route
 
 ```{sql}
 #| connection: eisenberg_connection
@@ -590,12 +590,12 @@ alternative_routes |> arrange(distance) |>
 
 ```
 
-## Porto Alegre
+### Porto Alegre
 
 ```{sql}
 #| eval: false
 
-
+--- Before flooding
 CREATE TABLE centroid_cbd_porto AS
 SELECT 
 	vertices.id,
@@ -789,10 +789,196 @@ ON hospitals.id = paths_linestring.end_vid
 
 SELECT * FROM paths_linestring_table_cdb_porto;
 
+---- after flooding
+    
+ ---- Postflooding
+
+---- hospitals
+ CREATE TABLE hospitals_after_flooding AS 
+ SELECT 
+ 	hospitals.id 
+ FROM 
+ 	hospital_rs_node_v2 AS hospitals,
+	flooding_cleaned_porto_union AS flood
+WHERE st_disjoint(hospitals.geom_node,
+				flood.geom);
+	
+-----
+		
+DROP TABLE first_path_porto_alegre_cbd_after;
+CREATE TABLE first_path_porto_alegre_cbd_after AS
+SELECT 
+        seq,
+        path_seq,
+        start_vid,
+        end_vid,
+        node,
+        edge,
+        net.the_geom,
+        1 AS path
+FROM  pgr_dijkstra('
+                SELECT 
+                        id,
+                        source,
+                        target,
+                        cost
+                FROM  prueba_largest_network_post',
+                (SELECT id FROM centroid_cbd_porto),
+                ARRAY(SELECT id FROM hospitals_after_flooding),
+                directed := TRUE) AS path
+    LEFT JOIN prueba_largest_network_post AS net
+    ON path.edge = net.id; 
+----------------
+DROP TABLE dijkstra_second_route_cbd_porto_after;
+CREATE TABLE dijkstra_second_route_cbd_porto_after AS
+WITH pgr_doubled_dijkstra AS (
+SELECT 
+    *
+FROM  pgr_dijkstra('
+                SELECT 
+                        id,
+                        source,
+                        target,
+                        cost
+                FROM prueba_largest_network_post',
+                 (SELECT id FROM centroid_cbd_porto),
+                ARRAY(SELECT id FROM hospitals_after_flooding),
+                directed:=true)), 
+second_route AS (
+            SELECT 
+            net.*,
+            CASE 
+                WHEN route.node = net.source THEN net.cost * 20
+                ELSE net.cost
+            END AS cost_updated
+            FROM            
+                prueba_largest_network_post AS net
+            LEFT JOIN 
+                pgr_doubled_dijkstra  AS route 
+            ON  
+                route.edge= net.id) 
+        SELECT * FROM second_route; 
+-----
+  
+SELECT DISTINCT(end_vid) FROM first_path_porto_alegre_cbd_after; ---15 hospitals
+SELECT DISTINCT (cd_cnes) FROM hospital_rs_node_v2 ; --- 22 hospital totals
+
+-------------
+DROP TABLE second_path_dikstra_cdb_porto_after;	
+CREATE TABLE second_path_dikstra_cdb_porto_after AS
+SELECT 
+            seq,
+            path_seq,
+            start_vid,
+            end_vid,
+            node,
+            edge,
+            net.the_geom,
+            2 AS path
+        FROM 
+            pgr_Dijkstra('
+                    SELECT
+                        id,
+                        source,
+                        target,
+                        cost_updated AS cost
+                    FROM
+                        dijkstra_second_route_cbd_porto_after',
+                    (SELECT id FROM centroid_cbd_porto),
+                    ARRAY(SELECT id FROM hospital_rs_node_v2))  AS path
+        LEFT JOIN
+                dijkstra_second_route_cbd_porto_after AS net ON
+            path.edge = net.id;
+           
+
+DROP TABLE dijkstra_third_route_cdb_porto_after;
+CREATE TABLE dijkstra_third_route_cdb_porto_after AS
+WITH pgr_doubled_dijkstra AS (
+SELECT 
+    *
+FROM  pgr_dijkstra('
+                SELECT 
+                        id,
+                        source,
+                        target,
+                        cost_updated AS cost
+                FROM dijkstra_second_route_cbd_porto_after',
+                (SELECT id FROM centroid_cbd_porto),
+                ARRAY(SELECT id FROM hospital_rs_node_v2),
+                directed:=true)), ----node 9372, network = source, target)
+second_route AS (
+            SELECT 
+            net.*,
+            CASE 
+                WHEN route.node = net.source THEN net.cost_updated * 20
+                ELSE net.cost_updated
+            END AS cost_updated_nd
+            FROM            
+                dijkstra_second_route_cbd_porto_after AS net
+            LEFT JOIN 
+                pgr_doubled_dijkstra  AS route 
+            ON  
+                route.edge= net.id) 
+        SELECT * FROM second_route;
+       
+-----
+DROP TABLE third_path_dikstra_cdb_porto_after;
+CREATE TABLE third_path_dikstra_cdb_porto_after AS
+SELECT 
+            seq,
+            path_seq,
+            start_vid,
+            end_vid,
+            node,
+            edge,
+            net.the_geom,
+            3 AS path
+        FROM 
+            pgr_Dijkstra('
+                    SELECT
+                        id,
+                        source,
+                        target,
+                        cost_updated_nd AS cost
+                    FROM
+                        dijkstra_third_route_cdb_porto_after',
+                    (SELECT id FROM centroid_cbd_porto),
+                    ARRAY(SELECT id FROM hospital_rs_node_v2))  AS path
+        LEFT JOIN
+                dijkstra_third_route_cdb_porto_after AS net ON
+            path.edge = net.id;
+
+           
+CREATE TABLE three_alternative_paths_porto_after AS 
+SELECT * FROM first_path_porto_alegre_cbd_after
+UNION
+SELECT * FROM second_path_dikstra_cdb_porto_after
+UNION
+SELECT * FROM third_path_dikstra_cdb_porto_after
+
+
+CREATE TABLE paths_linestring_table_cdb_porto_after AS
+WITH paths_linestring AS (
+SELECT
+    start_vid,
+    end_vid,
+    path,
+    st_union(the_geom) AS line_geom
+FROM 
+    three_alternative_paths_porto_after
+GROUP BY path, start_vid, end_vid)
+SELECT 
+    paths_linestring.*,
+    hospitals.ds_cnes,
+    round(st_length(line_geom::geography)::numeric/1000,2) AS distance
+FROM 
+    paths_linestring
+JOIN hospital_rs_node_v2 AS hospitals
+ON hospitals.id = paths_linestring.end_vid
 
 ```
 
-## Canoas
+### Canoas
 
 ```{sql}
 #| eval: false
