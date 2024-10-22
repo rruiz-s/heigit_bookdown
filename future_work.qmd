@@ -1181,6 +1181,367 @@ ON hospitals.id = paths_linestring.end_vid
 
 
 ```
+## Isochrones
+### Import data
+
+```{r}
+# install.packages("pak")
+# pak::pak("GIScience/openrouteservice-r")
+# 
+library(openrouteservice)
+
+ors_api_key("5b3ce3597851110001cf624887cc526d2c904fb9a2cad4dcd6fe7d31")
+
+poi_hospital <- st_read(eisenberg_connection, "hospital_rs_node_v2")
+
+poi_hospital <- poi_hospital |> arrange(ds_cnes)
+
+### Manually
+res_5 <-  ors_isochrones(st_coordinates(poi_hospital$geom_node[1:5]), range = 600, interval = 600, output = "sf") |> mutate(ds_cnes = poi_hospital$ds_cnes[1:5],
+                                        cd_cnes = poi_hospital$cd_cnes[1:5],
+                                        id = poi_hospital$id[1:5])
+res_10 <- ors_isochrones(st_coordinates(poi_hospital$geom_node[6:10]), range = 600, interval = 600, output = "sf") |> mutate(ds_cnes = poi_hospital$ds_cnes[6:10],
+                                        cd_cnes = poi_hospital$cd_cnes[6:10],
+                                        id = poi_hospital$id[6:10])
+res_16 <-  ors_isochrones(st_coordinates(poi_hospital$geom_node[11:15]), range = 600, interval = 600, output = "sf") |>
+  mutate(ds_cnes = poi_hospital$ds_cnes[11:15],
+        cd_cnes = poi_hospital$cd_cnes[11:15],
+                                        id = poi_hospital$id[11:15])
+res_22 <-  ors_isochrones(st_coordinates(poi_hospital$geom_node[16:20]), range = 600, interval = 600, output = "sf") |> mutate(ds_cnes = poi_hospital$ds_cnes[16:20],
+                                        cd_cnes = poi_hospital$cd_cnes[16:20],
+                                        id = poi_hospital$id[16:20])
+res_22_24 <-  ors_isochrones(st_coordinates(poi_hospital$geom_node[21:22]), range = 600, interval = 600, output = "sf") |> 
+mutate(ds_cnes = poi_hospital$ds_cnes[21:22],
+       cd_cnes = poi_hospital$cd_cnes[21:22],
+                                        id = poi_hospital$id[21:22])
+
+### 
+isochrones <- bind_rows(res_5,res_10, res_16, res_22, res_22_24) |>
+  subset(select=c(value, geometry,ds_cnes, cd_cnes,id))
+
+isochrone_v2 <- isochrones |> subset(select=c(group_index, value, geometry)) |> mutate(
+  lon=as.numeric(unlist(map(isochrones$center,1))),
+  lat=as.numeric(unlist(map(isochrones$center,2))))
+
+DBI::dbWriteTable(eisenberg_connection, "isochrone_600",isochrones)
+## 
+isochrone_point <- isochrone_v2 |>
+                    st_centroid(geometry)
+st_join(isochrone_point,
+                  poi_hospital, by =st_nearest_features)
+##
+isochrone_v2 |> mutate(geometry_point = st_as_sf(coords=c("lon","lat")))
+
+poi_hospital_coords <- poi_hospital |> sf::st_drop_geometry() |> 
+                    mutate(lon= round(st_coordinates(poi_hospital$geom_node)[,1],3),
+lan =st_coordinates(poi_hospital$geom_node)[,2])                            
+# sf_use_s2(FALSE)
+isochrone_poi <- sf::st_join(sf::st_as_sf(isochrone_v2,poi_hospital_coords), join=st_intersects)
+
+left_join(isochrone_v2, poi_hospital_coords, by="lon")
+
+
+DBI::dbWriteTable(eisenberg_connection,  "isochrone_v2",isochrone_v2)
+
+### Loop - it does not work
+for (i in 1:length(poi_hospital$geom_node)){
+  print(i)
+   res <- ors_isochrones(
+     st_coordinates(poi_hospital$geom_node[i,]),
+                     range=1800,
+                     interval=600,
+                     output="sf")
+   isochrone_results[[i]] <- res
+}
+
+```
+
+## Workflow in R
+
+```{r}
+library(sfnetworks)
+net <- sf::read_sf(eisenberg_connection,
+            "porto_alegre_net_largest") |>
+  sfnetworks::as_sfnetwork() 
+
+from <- sf::read_sf(eisenberg_connection,
+                    "points_cardiologia") |> st_as_sf()
+to <- sf::read_sf(eisenberg_connection,
+                    "hospital_rs_node_v2") |> st_as_sf()
+
+first_destinations <- st_network_paths(net, from =from[1,], to = to[20,])
+
+```
+
+```{r}
+library(DBI)
+library(glue)
+library(RPostgres)
+
+eisenberg_connection <- DBI::dbConnect(RPostgres::Postgres(),
+                          user= "docker",
+                          password = "docker",
+                          host = "localhost",
+                          dbname="gis",
+                          port = 25432)
+
+# create empty table
+idx  <-  1
+  
+hospital_name <- from$ds_cnes[idx]
+origin_id <- from$id[idx]
+
+# Assuming you have an open PostgreSQL connection in con
+query <- glue_sql("
+CREATE TABLE first_path_point_1 AS
+SELECT 
+        seq,
+        path_seq,
+        start_vid,
+        end_vid,
+        net.the_geom,
+        node,
+        edge,
+        1 AS path
+  FROM pgr_dijkstra('
+        SELECT
+            id,
+            source,
+            target,
+            cost
+        FROM porto_alegre_net_largest',
+                    ARRAY(SELECT id FROM points_cardiologia WHERE id ={origin_id}),
+                    ARRAY(SELECT id AS end_id FROM hospital_rs_node_v2 WHERE ds_cnes = {hospital_name}),
+                    directed:=TRUE) AS path
+LEFT JOIN porto_alegre_net_largest AS net
+ON Path.edge = net.id", .con = eisenberg_connection)
+
+
+# Send the query
+result <- dbGetQuery(conn= eisenberg_connection, query)
+# dijkstra_second_route
+
+query_2 <- glue_sql("
+CREATE TABLE second_path_point_1 AS
+WITH pgr_doubled_dijkstra AS (
+    SELECT 
+        *
+    FROM  pgr_dijkstra('
+            SELECT 
+                id,
+                source,
+                target,
+                cost
+            FROM porto_alegre_net_largest',
+            ARRAY(SELECT id FROM points_cardiologia WHERE id = {origin_id}),
+            ARRAY(SELECT id FROM hospital_rs_node_v2 WHERE ds_cnes = {hospital_name}),
+            directed := TRUE  -- This clause should be inside the pgr_dijkstra function
+        )
+),  -- Corrected closing of pgr_dijkstra CTE
+second_route AS (
+    SELECT 
+        net.*,
+        CASE 
+            WHEN route.node = net.source THEN net.cost * 20
+            ELSE net.cost
+        END AS cost_updated
+    FROM            
+        porto_alegre_net_largest AS net
+    LEFT JOIN 
+        pgr_doubled_dijkstra  AS route 
+    ON  
+        route.edge = net.id
+) 
+SELECT * 
+FROM second_route", .con = eisenberg_connection)
+
+result <- dbGetQuery(conn= eisenberg_connection, query_2)
+
+## Calculate teh second route
+create_table_query <- glue_sql("
+CREATE TABLE second_route_point_1 AS
+SELECT 
+    seq,
+    path_seq,
+    start_vid,
+    end_vid,
+    node,
+    edge,
+    net.the_geom,
+    2 AS path
+FROM 
+    pgr_dijkstra('
+        SELECT
+            id,
+            source,
+            target,
+            cost_updated AS cost
+        FROM
+            second_path_point_1',
+        ARRAY(SELECT id FROM points_cardiologia WHERE id = {origin_id}),
+        ARRAY(SELECT id FROM hospital_rs_node_v2 WHERE ds_cnes = {hospital_name}), directed:=TRUE
+    ) AS path
+LEFT JOIN
+    second_path_point_1 AS net 
+    ON path.edge = net.id;
+", .con = eisenberg_connection)
+
+# Run the CREATE TABLE query
+dbExecute(conn = eisenberg_connection, create_table_query)
+select_query <- "SELECT * FROM second_route_point_1;"
+
+# Fetch the data
+result <- dbGetQuery(conn = eisenberg_connection, select_query)
+
+# Third route
+query_4 <- glue_sql("
+CREATE TABLE third_path_point_1 AS
+WITH pgr_doubled_dijkstra AS (
+SELECT 
+    *
+FROM  pgr_dijkstra('
+                SELECT 
+                        id,
+                        source,
+                        target,
+                        cost_updated AS cost
+                FROM second_path_point_1',
+                ARRAY(SELECT id FROM points_cardiologia WHERE id = {origin_id}),
+        ARRAY(SELECT id FROM hospital_rs_node_v2 WHERE ds_cnes = {hospital_name}),
+                directed:=TRUE)), ----node 9372, network = source, target)
+second_route AS (
+            SELECT 
+            net.*,
+            CASE 
+                WHEN route.node = net.source THEN net.cost_updated * 20
+                ELSE net.cost_updated
+            END AS cost_updated_nd
+            FROM            
+                second_path_point_1 AS net
+            LEFT JOIN 
+                pgr_doubled_dijkstra  AS route 
+            ON  
+                route.edge= net.id) 
+        SELECT * FROM second_route", .con=eisenberg_connection);
+result <- dbGetQuery(conn = eisenberg_connection, query_4)
+
+# third route
+query_5 <- glue_sql("
+CREATE TABLE third_route_point_1 AS
+SELECT 
+            seq,
+            path_seq,
+            start_vid,
+            end_vid,
+            node,
+            edge,
+            net.the_geom,
+            3 AS path
+        FROM 
+            pgr_Dijkstra('
+                    SELECT
+                        id,
+                        source,
+                        target,
+                        cost_updated_nd AS cost
+                    FROM
+                        third_path_point_1',
+                   ARRAY(SELECT id FROM points_cardiologia WHERE id = {origin_id}),
+        ARRAY(SELECT id FROM hospital_rs_node_v2 WHERE ds_cnes = {hospital_name}))  AS path
+        LEFT JOIN
+                third_path_point_1 AS net ON
+            path.edge = net.id;", .con= eisenberg_connection)
+result <- dbGetQuery(conn = eisenberg_connection, query_5)
+
+alterantive_point_1 <- glue_sql("
+CREATE TABLE three_alternative_routes_point_1 AS 
+SELECT start_vid, end_vid,path, the_geom, edge FROM first_path_point_1
+UNION
+SELECT start_vid, end_vid,path, the_geom, edge FROM second_route_point_1
+UNION
+SELECT start_vid, end_vid,path, the_geom, edge FROM third_route_point_1", .con = eisenberg_connection)
+
+result <- dbGetQuery(conn = eisenberg_connection, alterantive_point_1)
+
+```
+
+```{r}
+table_end_point_1 <- glue_sql("
+CREATE TABLE table_end_point_1 AS
+SELECT
+            alternative.*,
+            ceil(st_length(alternative.the_geom::geography)/1000) As length,
+            original.cost AS cost
+          FROM
+            three_alternative_routes_point_1 AS alternative
+          LEFT JOIN
+           porto_alegre_net_largest  AS original
+          ON
+          alternative.edge = original.id
+          WHERE
+            edge!= -1", .conn=eisenberg_connection)
+result <- dbGetQuery(conn=eisenberg_connection,table_end_point_1 )
+```
+
+```{r}
+table_end <- glue_sql("CREATE TABLE table_end
+                (start_vid integer,
+                end_vid integer,
+                path smallint,
+                length float,
+                cost float)")
+result <- dbGetQuery(conn=eisenberg_connection,table_end )
+```
+
+```{r}
+calculations <- glue_sql("
+        SELECT 
+          start_vid,
+          end_vid,
+          path,
+          sum(length),
+          sum(cost)
+        FROM 
+          table_end_point_1
+        GROUP BY
+        start_vid,
+        end_vid,
+        path
+        ORDER BY path ASC")
+dbGetQuery(conn=eisenberg_connection, calculations)
+```
+
+
+```{r}
+result |>
+  dplyr::select(c(start_vid, end_vid,path, length, cost)) |>
+  group_by(start_vid,end_vid,path) |>
+  summarise(length=sum(length),
+            cost=sum(cost))
+```
+
+
+```{sql}
+#| connection: eisenberg_connection
+
+SELECT
+                *
+        FROM pgr_dijkstra('
+        					SELECT
+                        id,
+                        source,
+                        target,
+                        cost
+                  FROM porto_alegre_net_largest',
+               ARRAY(SELECT id FROM points_cardiologia LIMIT 1),
+               ARRAY(SELECT id AS end_id FROM hospital_rs_node_v2 WHERE ds_cnes = 'HOSPITAL SAO CAMILOESTEIO'),
+               directed:=TRUE)
+
+
+```
+
+
+
 ## Visualization
 ## Tabla A: alternative
 
